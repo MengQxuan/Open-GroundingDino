@@ -1,251 +1,143 @@
-<div align="center">
-  <img src="figs/cute_dino.png" width="35%">
-</div>
 
-This is the third party implementation of the paper **[Grounding DINO: Marrying DINO with Grounded Pre-Training for Open-Set Object Detection](https://arxiv.org/abs/2303.05499)** by [Zuwei Long]() and [Wei Li](https://github.com/bigballon).
+# Open-GroundingDINO 复现与微调实验记录
 
-**You can use this code to fine-tune a model on your own dataset, or start pretraining a model from scratch.**
+本项目基于开源仓库 **Open-GroundingDINO**，完成了从环境配置、数据集转换（COCO → ODVG）、模型加载、训练到评估的**完整复现流程**，并在 COCO 子集上验证了 **GroundingDINO 预训练模型的微调有效性**。  
+实验在 **单卡 RTX 4090（24GB）** 环境下完成，支持 AMP 混合精度训练。
 
-- [Supported Features](#supported-features)
-- [Setup](#setup)
-- [Dataset](#dataset)
-- [Config](#config)
-- [Training](#training)
-- [Results and Models](#results-and-models)
-- [Inference](#inference)
-- [Acknowledgments](#acknowledgments)
-- [Citation](#citation)
-- [Contact](#contact)
+---
 
-# Supported Features
+## 1. 实验环境
 
-|                                | Official release version | The version we replicated |
-| ------------------------------ | :----------------------: | :-----------------------: |
-| Inference                      |         &#10004;         |         &#10004;          |
-| Train (Object Detection data) |         &#10006;         |         &#10004;          |
-| Train (Grounding data)         |         &#10006;         |         &#10004;          |
-| Slurm multi-machine support    |         &#10006;         |         &#10004;          |
-| Training acceleration strategy |         &#10006;         |         &#10004;          |
+- GPU：RTX 4090 24GB（单卡）
+- CUDA：12.x
+- Python：3.8
+- PyTorch：支持 AMP
+- 训练方式：`torchrun` 单进程
+- 操作系统：Linux
 
+---
 
+## 2. 项目目标
 
-# Setup
+- 复现 GroundingDINO 在 COCO 数据集上的训练与评估流程
+- 理解并跑通 **ODVG（Open-Domain Visual Grounding）** 数据格式
+- 在不修改模型结构的前提下，验证：
+  - 预训练模型在下游数据集上的表现
+  - 微调（fine-tuning）是否能带来稳定性能提升
+- 为后续改进模型结构 / 训练策略提供可靠基线
 
-We conduct our model testing using the following versions: Python 3.7.11, PyTorch 1.11.0, and CUDA 11.3. It is possible that other versions are also available.
+---
 
-1. Clone this repository.
+## 3. 数据集与格式转换
+
+### 3.1 使用数据集
+
+- **COCO 2017**
+  - Train：`train2017`
+  - Val：`val2017`
+
+### 3.2 ODVG 格式转换
+
+GroundingDINO 训练阶段使用 **ODVG jsonl** 格式描述检测数据。  
+本项目使用仓库自带脚本完成转换：
 
 ```bash
-git clone https://github.com/longzw1997/Open-GroundingDino.git && cd Open-GroundingDino/
-```
+python tools/coco2odvg.py \
+  -i data/coco/annotations/instances_train2017.json \
+  -o data/coco/annotations/odvg_train2017.jsonl \
+  --idmap coco2017
+````
 
-2. Install the required dependencies.
+验证集保持 COCO 原生 `instances_val2017.json`，用于标准 COCO eval。
 
-```bash
-pip install -r requirements.txt 
-cd models/GroundingDINO/ops
-python setup.py build install
-python test.py
-cd ../../..
-```
+---
 
-3. Download [pre-trained model](https://github.com/IDEA-Research/GroundingDINO/releases) and [BERT](https://huggingface.co/bert-base-uncased) weights, then modify the corresponding paths in the train/test script.
+## 4. 子集（Smoke Test）设置
 
-# Dataset
+由于 COCO 全量训练耗时较长（单 epoch 约 6h+），为了快速验证复现正确性，构建了一个 **子集验证配置**：
 
-For **training**, we use the [odvg data format](data_format.md) to support **both OD data and VG data**.  
-Before model training begins, you need to convert your dataset into odvg format, see [data_format.md](data_format.md) | [datasets_mixed_odvg.json](config/datasets_mixed_odvg.json) | [coco2odvg.py](./tools/coco2odvg.py) | [grit2odvg](./tools/grit2odvg.py) for more details.  
+* 训练集：COCO train2017 抽样 **5000 张**
+* 验证集：COCO val2017 抽样 **500 张**
+* 输入分辨率：
 
-For **testing**, we use [coco format](https://cocodataset.org/#format-data), which currently only supports OD datasets.
+  * `data_aug_scales = [480]`
+  * `data_aug_max_size = 800`
+* 训练 epoch：3～5
+* 目的：
 
-<details>
-  <summary>mixed dataset</summary>
-  </br>
+  * 快速验证 pipeline 是否正确
+  * 对比预训练与微调效果
+  * 支持高频实验迭代
 
-``` json
-{
-  "train": [
-    {
-      "root": "path/V3Det/",
-      "anno": "path/V3Det/annotations/v3det_2023_v1_all_odvg.jsonl",
-      "label_map": "path/V3Det/annotations/v3det_label_map.json",
-      "dataset_mode": "odvg"
-    },
-    {
-      "root": "path/LVIS/train2017/",
-      "anno": "path/LVIS/annotations/lvis_v1_train_odvg.jsonl",
-      "label_map": "path/LVIS/annotations/lvis_v1_train_label_map.json",
-      "dataset_mode": "odvg"
-    },
-    {
-      "root": "path/Objects365/train/",
-      "anno": "path/Objects365/objects365_train_odvg.json",
-      "label_map": "path/Objects365/objects365_label_map.json",
-      "dataset_mode": "odvg"
-    },
-    {
-      "root": "path/coco_2017/train2017/",
-      "anno": "path/coco_2017/annotations/coco2017_train_odvg.jsonl",
-      "label_map": "path/coco_2017/annotations/coco2017_label_map.json",
-      "dataset_mode": "odvg"
-    },
-    {
-      "root": "path/GRIT-20M/data/",
-      "anno": "path/GRIT-20M/anno/grit_odvg_620k.jsonl",
-      "dataset_mode": "odvg"
-    }, 
-    {
-      "root": "path/flickr30k/images/flickr30k_images/",
-      "anno": "path/flickr30k/annotations/flickr30k_entities_odvg_158k.jsonl",
-      "dataset_mode": "odvg"
-    }
-  ],
-  "val": [
-    {
-      "root": "path/coco_2017/val2017",
-      "anno": "config/instances_val2017.json",
-      "label_map": null,
-      "dataset_mode": "coco"
-    }
-  ]
-}
-```
-</details>
+---
 
-<details>
-  <summary>example for odvg dataset</summary>
-  </br>
+## 5. 预训练模型
 
-``` bash
-# For OD
-{"filename": "000000391895.jpg", "height": 360, "width": 640, "detection": {"instances": [{"bbox": [359.17, 146.17, 471.62, 359.74], "label": 3, "category": "motorcycle"}, {"bbox": [339.88, 22.16, 493.76, 322.89], "label": 0, "category": "person"}, {"bbox": [471.64, 172.82, 507.56, 220.92], "label": 0, "category": "person"}, {"bbox": [486.01, 183.31, 516.64, 218.29], "label": 1, "category": "bicycle"}]}}
-{"filename": "000000522418.jpg", "height": 480, "width": 640, "detection": {"instances": [{"bbox": [382.48, 0.0, 639.28, 474.31], "label": 0, "category": "person"}, {"bbox": [234.06, 406.61, 454.0, 449.28], "label": 43, "category": "knife"}, {"bbox": [0.0, 316.04, 406.65, 473.53], "label": 55, "category": "cake"}, {"bbox": [305.45, 172.05, 362.81, 249.35], "label": 71, "category": "sink"}]}}
+使用官方提供的预训练权重：
 
-# For VG
-{"filename": "014127544.jpg", "height": 400, "width": 600, "grounding": {"caption": "Homemade Raw Organic Cream Cheese for less than half the price of store bought! It's super easy and only takes 2 ingredients!", "regions": [{"bbox": [5.98, 2.91, 599.5, 396.55], "phrase": "Homemade Raw Organic Cream Cheese"}]}}
-{"filename": "012378809.jpg", "height": 252, "width": 450, "grounding": {"caption": "naive : Heart graphics in a notebook background", "regions": [{"bbox": [93.8, 47.59, 126.19, 77.01], "phrase": "Heart graphics"}, {"bbox": [2.49, 1.44, 448.74, 251.1], "phrase": "a notebook background"}]}}
-```
-</details>
+* `groundingdino_swint_ogc.pth`
+* Backbone：Swin-T
+* Text Encoder：BERT-base-uncased
 
-# Config
+权重通过 `--pretrain_model_path` 加载。
+
+---
+
+## 6. 实验结果
+
+### 6.1 预训练模型（0 训练，直接评估）
+
+在 **COCO 子集验证集（500 张）** 上直接评估预训练模型：
 
 ```
-config/cfg_odvg.py                   # for backbone, batch size, LR, freeze layers, etc.
-config/datasets_mixed_odvg.json      # support mixed dataset for both OD and VG
+AP@[IoU=0.50:0.95] = 0.519
+AP@0.50            = 0.675
+AP@0.75            = 0.566
 ```
 
-# Training
+评估耗时约 **67 秒**。
 
-- **Datasets:** before starting the training, you need to modify the ``config/datasets_mixed_example.json`` according to [data_format.md](data_format.md).
-- **Configs:** defaults to using coco_val2017 for evaluation.
-    - If you are evaluating with your own test set, you need to convert the test data to coco format (not the ovdg format) and modify the config to set **use_coco_eval = False** (The COCO dataset has 80 classes used for training but 90 categories in total, so there is a built-in mapping in the code).
-    - Also, add(or update) the **label_list** in the config with your own class names like **label_list=['dog', 'cat', 'person']**.
+---
 
-``` diff
-- use_coco_eval = True
-+ use_coco_eval = False
-+ label_list=['dog', 'cat', 'person']
-```
-- **Train/Eval**:
+### 6.2 微调后模型（Fine-tuning）
 
-```  bash
-# train/eval on torch.distributed.launch:
-bash train_dist.sh  ${GPU_NUM} ${CFG} ${DATASETS} ${OUTPUT_DIR}
-bash test_dist.sh  ${GPU_NUM} ${CFG} ${DATASETS} ${OUTPUT_DIR}
-
-# train/eval on slurm cluster：
-bash train_slurm.sh  ${PARTITION} ${GPU_NUM} ${CFG} ${DATASETS} ${OUTPUT_DIR}
-bash test_slurm.sh  ${PARTITION} ${GPU_NUM} ${CFG} ${DATASETS} ${OUTPUT_DIR}
-# e.g.  check train_slurm.sh for more details
-# bash train_slurm.sh v100_32g 32 config/cfg_odvg.py config/datasets_mixed_odvg.json ./logs
-# bash train_slurm.sh v100_32g 8 config/cfg_coco.py config/datasets_od_example.json ./logs
-```
-
-
-# Results and Models
-
-<table style="font-size:11px;" >
-  <thead>
-    <tr style="text-align: right;">
-      <th>Name</th>
-      <th>Pretrain data</th>
-      <th>Task</th>
-      <th>mAP on COCO</th>
-      <th>Ckpt</th>
-      <th>Misc</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>GroundingDINO-T<br>(offical)</td>
-      <td>O365,GoldG,Cap4M</td>
-      <td>zero-shot</td>
-      <td>48.4<br>(zero-shot)</td>
-      <td><a href="https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth">model</a> 
-      <td> - </td>
-    </tr>
-      <td>GroundingDINO-T<br>(fine-tune)</td>
-      <td>O365,GoldG,Cap4M</td>
-      <td>finetune<br>w/ coco</td>
-      <td><b>57.3</b><br>(fine-tune)</td>
-      <td><a href="https://github.com/longzw1997/Open-GroundingDino/releases/download/v0.1.0/gdinot-coco-ft.pth">model</a> 
-      <td><a href="https://drive.google.com/file/d/1TJRAiBbVwj3AfxvQAoi1tmuRfXH1hLie/view?usp=drive_link">cfg</a> | <a href="https://drive.google.com/file/d/1u8XyvBug56SrJY85UtMZFPKUIzV3oNV6/view?usp=drive_link">log</a></td>
-    </tr>
-    <tr>
-      <td>GroundingDINO-T<br>(pretrain)</td>
-      <td>COCO,O365,LIVS,<a href="https://github.com/V3Det/V3Det">V3Det</a>,<br>GRIT-200K,<a href="https://github.com/BryanPlummer/flickr30k_entities">Flickr30k</a>(total 1.8M)</td>
-      <td>zero-shot</td>
-      <td><b>55.1</b><br>(zero-shot)</td>
-      <td><a href="https://github.com/longzw1997/Open-GroundingDino/releases/download/v0.1.0/gdinot-1.8m-odvg.pth">model</a>  
-      <td><a href='https://drive.google.com/file/d/1LwtkvBHkP1OkErKBsVfwjcedVXkyocA5/view?usp=drive_link'>cfg</a> | <a href="https://drive.google.com/file/d/1kBEFk14OqcYHC7DPdA_BGtk2TBQkJtrL/view?usp=drive_link">log</a></td>
-    </tr>
-  </tbody>
-</table>
-
-- [GRIT](https://huggingface.co/datasets/zzliang/GRIT)-200K generated by [GLIP](https://github.com/microsoft/GLIP) and [spaCy](https://spacy.io/).
-
-
-# Inference
-
-Because the model architecture has not changed, you only need to **install** [GroundingDINO](https://github.com/IDEA-Research/GroundingDINO) library and then run [inference_on_a_image.py](./tools/inference_on_a_image.py) to inference your images.
-
-``` bash
-python tools/inference_on_a_image.py \
-  -c tools/GroundingDINO_SwinT_OGC.py \
-  -p path/to/your/ckpt.pth \
-  -i ./figs/dog.jpeg \
-  -t "dog" \
-  -o output
-```
-
-| Prompt |        Official ckpt         |        COCO ckpt         |        1.8M ckpt         |
-| :----: | :--------------------------: | :----------------------: | :----------------------: |
-|  dog   | ![](./figs/dog-official.jpg) | ![](./figs/dog-coco.jpg) | ![](./figs/dog-1.8m.jpg) |
-|  cat   | ![](./figs/cat-official.jpg) | ![](./figs/cat-coco.jpg) | ![](./figs/cat-1.8m.jpg) |
-
-# Acknowledgments
-
-Provided codes were adapted from:
-
-- [microsoft/GLIP](https://github.com/microsoft/GLIP)
-- [IDEA-Research/DINO](https://github.com/IDEA-Research/DINO/)
-- [IDEA-Research/GroundingDINO](https://github.com/IDEA-Research/GroundingDINO)
-
-
-# Citation
+在相同子集设置下进行微调训练后，评估结果为：
 
 ```
-@misc{Open Grounding Dino,
-  author = {Zuwei Long, Wei Li},
-  title = {Open Grounding Dino:The third party implementation of the paper Grounding DINO},
-  howpublished = {\url{https://github.com/longzw1997/Open-GroundingDino}},
-  year = {2023}
-}
+AP@[IoU=0.50:0.95] = 0.542
+AP@0.50            = 0.690
+AP@0.75            = 0.593
 ```
 
-# Contact
+相较于预训练模型：
 
-- longzuwei at sensetime.com  
-- liwei1 at sensetime.com  
+* **AP 提升：+0.023**
+* 相对提升约 **4.4%**
+* 训练时间：约 **1 小时 28 分钟**
 
-Feel free to contact we if you have any suggestions or questions. Bugs found are also welcome. Please create a pull request if you find any bugs or want to contribute code.
+该结果表明：
+
+* 训练与评估流程完全跑通
+* 微调在子集上带来了稳定、可观的性能提升
+
+---
+
+## 7. 当前结论
+
+* 成功复现了 GroundingDINO 在 COCO 数据集上的训练与评估流程
+* ODVG 数据格式转换正确，训练与 COCO eval 兼容
+* 预训练模型具备较强基线性能
+* 微调在子集上能够稳定提升检测精度
+* 当前 pipeline 可作为后续模型与训练策略改进的可靠基线
+
+---
+
+## 8. 后续计划
+
+* 冻结 / 解冻 Text Encoder（BERT）的消融实验
+* `num_queries` 数量对性能与训练速度的影响分析
+* 不同输入分辨率与数据增强策略的对比
+* 推理可视化与 open-vocabulary grounding demo
+* 尝试在更大数据集或混合数据集上进行训练
+
+---
