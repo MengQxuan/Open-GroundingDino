@@ -1,3 +1,4 @@
+# 从COCO数据集中生成训练子集和验证子集
 import argparse, json, random, os
 from collections import defaultdict
 
