@@ -1,0 +1,18 @@
+{
+    "train": [
+        {
+            "root": "data/coco/train2017",
+            "anno": "data/coco/annotations/subset/odvg_train2017_subset_5000.jsonl",
+            "label_map": "config/coco2017_label_map.json",
+            "dataset_mode": "odvg"
+        }
+    ],
+    "val": [
+        {
+            "root": "data/coco/val2017",
+            "anno": "data/coco/annotations/subset/instances_val2017_subset_500.json",
+            "label_map": null,
+            "dataset_mode": "coco"
+        }
+    ]
+}
