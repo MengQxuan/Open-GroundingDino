@@ -1,3 +1,4 @@
+10k1k_baseline
 torchrun --nproc_per_node=1 main.py \
   --config_file config/cfg_coco.py \
   --datasets config/datasets_coco_10k1k.json \
@@ -8,3 +9,14 @@ torchrun --nproc_per_node=1 main.py \
   --amp \
   --save_log
 
+
+冻结BERT
+torchrun --nproc_per_node=1 main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --output_dir outputs/10k1k_freeze_bert_lr0 \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --options text_encoder_type=weights/bert-base-uncased epochs=5 \
+  --num_workers 8 \
+  --amp \
+  --save_log
