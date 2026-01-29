@@ -251,6 +251,15 @@ def main(args):
 
         logger.info("Ignore keys: {}".format(json.dumps(ignorelist, indent=2)))
         _tmp_st = OrderedDict({k:v for k, v in utils.clean_state_dict(checkpoint).items() if check_keep(k, _ignorekeywordlist)})
+        
+        # ignore query embedding when changing num_queries
+        # 把 num_queries 从 900 改成 600 以后，模型里 tgt_embed.weight 的形状变了，
+        # 但加载的预训练权重（groundingdino_swint_ogc.pth）里还是 900×256，所以 load_state_dict 直接 size mismatch。
+        # 预训练权重照常加载，唯独 transformer.tgt_embed.weight 不加载，让它随机初始化。
+        for k in ["transformer.tgt_embed.weight"]:
+            if k in _tmp_st:
+                print(f"Pop key from checkpoint: {k}, shape={_tmp_st[k].shape}")
+                _tmp_st.pop(k)
 
         _load_output = model_without_ddp.load_state_dict(_tmp_st, strict=False)
         logger.info(str(_load_output))

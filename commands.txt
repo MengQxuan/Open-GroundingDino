@@ -20,3 +20,16 @@ torchrun --nproc_per_node=1 main.py \
   --num_workers 8 \
   --amp \
   --save_log
+
+
+把 num_queries 从 900 改成 600
+torchrun --nproc_per_node=1 main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --output_dir outputs/10k1k_q600 \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --finetune_ignore transformer.tgt_embed.weight \
+  --options text_encoder_type=weights/bert-base-uncased epochs=5 num_queries=600 \
+  --num_workers 8 \
+  --amp \
+  --save_log
