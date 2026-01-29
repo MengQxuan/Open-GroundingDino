@@ -8,3 +8,4 @@
     - Baseline（10k/1k，5 epoch，AMP）：AP=**0.550**，Training time=3:07:14
     - Freeze-BERT-lr0（10k/1k，5 epoch，AMP）：AP=**0.454**，Training time=2:53:43
     - 冻结文本编码器会显著降低性能（-0.096 AP），加速收益有限（~7%），因此后续改进不采用该策略。
+    
