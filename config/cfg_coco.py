@@ -50,10 +50,21 @@ max_labels = 80                               # pos + neg
 lr = 0.0001                                   # base learning rate
 backbone_freeze_keywords = None               # only for gdino backbone
 freeze_keywords = None                        # for whole model, e.g. ['backbone.0', 'bert'] for freeze visual encoder and text encoder
-# lr_backbone = 1e-05                           # specific learning rate
-# lr_backbone_names = ['backbone.0', 'bert']
-lr_backbone_names = ['bert']  #冻结 BERT
-lr_backbone = 0.0  #冻结 BERT
+lr_backbone = 1e-05                           # specific learning rate
+lr_backbone_names = ['backbone.0', 'bert']
+
+# # lr_backbone_names = ['bert']  #冻结 BERT
+# # lr_backbone = 0.0  #冻结 BERT
+
+# # ================= 冻结 BERT =================
+
+# freeze_keywords = ['bert.encoder']   # 只冻结 BERT encoder
+# # freeze_keywords = ['bert']          # 如果想全冻结 BERT，也可以用这个
+# # 不使用 lr_backbone 分支（必须是 list，不能是 None）
+# lr_backbone_names = []
+# lr_backbone = 0.0
+
+
 lr_linear_proj_mult = 1e-05
 lr_linear_proj_names = ['ref_point_head', 'sampling_offsets']
 weight_decay = 0.0001

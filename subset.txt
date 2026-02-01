@@ -95,3 +95,46 @@ IoU metric: bbox
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.744
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.877
 Training time 2:53:43
+
+
+
+Auto DL
+
+10k1k_q900
+Averaged stats: 
+Accumulating evaluation results...
+DONE (t=3.84s).
+IoU metric: bbox
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.552
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.703
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.605
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.389
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.587
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.702
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.418
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.708
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.780
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.626
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.810
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.912
+Training time 1:52:57
+
+
+冻结BERT
+Accumulating evaluation results... 
+DONE (t=4.24s). 
+IoU metric: bbox 
+Average Precision (AP) @[ IoU=0.50:0.95 | area= all | maxDets=100 ] = 0.490 
+Average Precision (AP) @[ IoU=0.50 | area= all | maxDets=100 ] = 0.632 
+Average Precision (AP) @[ IoU=0.75 | area= all | maxDets=100 ] = 0.541 
+Average Precision (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.351 
+Average Precision (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.517 
+Average Precision (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.632 
+Average Recall (AR) @[ IoU=0.50:0.95 | area= all | maxDets= 1 ] = 0.398 
+Average Recall (AR) @[ IoU=0.50:0.95 | area= all | maxDets= 10 ] = 0.673 
+Average Recall (AR) @[ IoU=0.50:0.95 | area= all | maxDets=100 ] = 0.752 
+Average Recall (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.590 
+Average Recall (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.787 
+Average Recall (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.907
+
+

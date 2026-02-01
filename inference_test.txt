@@ -1,8 +1,0 @@
-python tools/inference_on_a_image.py \
-  --config_file tools/GroundingDINO_SwinT_OGC.py \
-  --checkpoint_path weights/groundingdino_swint_ogc.pth \
-  --image_path test.png \
-  --text_prompt "person, car, dog" \
-  --output_dir outputs/inference_test \
-  --box_threshold 0.3 \
-  --text_threshold 0.25

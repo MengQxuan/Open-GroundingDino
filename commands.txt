@@ -33,3 +33,44 @@ torchrun --nproc_per_node=1 main.py \
   --num_workers 8 \
   --amp \
   --save_log
+
+
+
+
+
+Auto DL
+
+inference_test
+python tools/inference_on_a_image.py \
+  --config_file tools/GroundingDINO_SwinT_OGC.py \
+  --checkpoint_path weights/groundingdino_swint_ogc.pth \
+  --image_path test.png \
+  --text_prompt "person, car, dog" \
+  --output_dir outputs/inference_test \
+  --box_threshold 0.3 \
+  --text_threshold 0.25
+
+
+10k1k_q900
+torchrun --nproc_per_node=2 --master_port=29501 main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --output_dir outputs/10k1k_q900_ddp2_baseline \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --options text_encoder_type=weights/bert-base-uncased epochs=5 \
+  --num_workers 8 \
+  --amp \
+  --save_log
+
+
+
+冻结BERT
+torchrun --nproc_per_node=2 main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --output_dir outputs/10k1k_baseline_freeze_bert_encoder_ddp \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --options text_encoder_type=weights/bert-base-uncased epochs=5 \
+  --num_workers 4 \
+  --amp \
+  --save_log
