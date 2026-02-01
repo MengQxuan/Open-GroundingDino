@@ -72,7 +72,12 @@ def load_image(image_path):
 def load_model(model_config_path, model_checkpoint_path, cpu_only=False):
     args = SLConfig.fromfile(model_config_path)
     args.device = "cuda" if not cpu_only else "cpu"
+    # model = build_model(args)
     model = build_model(args)
+    # Open-GroundingDino 里 build_model 可能返回 (model, criterion, postprocessors)
+    if isinstance(model, (tuple, list)):
+        model = model[0]
+
     checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
     load_res = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
     print(load_res)

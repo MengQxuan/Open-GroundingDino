@@ -1,10 +1,7 @@
-# ------------------------------------------------------------------------
-# DINO
-# Copyright (c) 2022 IDEA. All Rights Reserved.
-# Licensed under the Apache License, Version 2.0 [see LICENSE for details]
-# ------------------------------------------------------------------------
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-from .GroundingDINO import build_groundingdino
+# Bridge module for tools/inference_on_a_image.py
+# It expects: from groundingdino.models import build_model
+
+from models.GroundingDINO import build_groundingdino as build
 
 def build_model(args):
     return build(args)
