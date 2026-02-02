@@ -63,6 +63,56 @@ torchrun --nproc_per_node=2 --master_port=29501 main.py \
   --save_log
 
 
+10k1k_q600
+torchrun --nproc_per_node=2 main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --output_dir outputs/10k1k_q600 \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --options text_encoder_type=weights/bert-base-uncased epochs=5 num_queries=600 \
+  --num_workers 8 \
+  --amp \
+  --save_log
+
+
+10k1k_q300
+torchrun --nproc_per_node=2 main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --output_dir outputs/10k1k_q300 \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --options text_encoder_type=weights/bert-base-uncased epochs=5 num_queries=300 \
+  --num_workers 8 \
+  --amp \
+  --save_log
+
+
+固定seed
+torchrun --nproc_per_node=2 main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --output_dir outputs/10k1k_q300_seed42_run1 \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --options text_encoder_type=weights/bert-base-uncased epochs=5 num_queries=300 \
+  --seed 42 \
+  --num_workers 8 \
+  --amp \
+  --save_log
+
+
+torchrun --nproc_per_node=2 main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --output_dir outputs/10k1k_q300_seed42_run2 \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --options text_encoder_type=weights/bert-base-uncased epochs=5 num_queries=300 \
+  --seed 42 \
+  --num_workers 8 \
+  --amp \
+  --save_log
+
+
+
 
 冻结BERT
 torchrun --nproc_per_node=2 main.py \

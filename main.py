@@ -138,6 +138,11 @@ def main(args):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
+    
+    # 在可控数据规模下，验证模型设计超参数的“统计稳定性”
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True #强制使用确定性 cuDNN 算子
+    torch.backends.cudnn.benchmark = False#  避免 cuDNN 每次选不同最快 kernel
 
 
     logger.debug("build model ... ...")
@@ -252,20 +257,38 @@ def main(args):
         logger.info("Ignore keys: {}".format(json.dumps(ignorelist, indent=2)))
         _tmp_st = OrderedDict({k:v for k, v in utils.clean_state_dict(checkpoint).items() if check_keep(k, _ignorekeywordlist)})
         
-        # ignore query embedding when changing num_queries
-        # 把 num_queries 从 900 改成 600 以后，模型里 tgt_embed.weight 的形状变了，
-        # 但加载的预训练权重（groundingdino_swint_ogc.pth）里还是 900×256，所以 load_state_dict 直接 size mismatch。
-        # 预训练权重照常加载，唯独 transformer.tgt_embed.weight 不加载，让它随机初始化。
-        for k in ["transformer.tgt_embed.weight"]:
-            if k in _tmp_st:
-                print(f"Pop key from checkpoint: {k}, shape={_tmp_st[k].shape}")
-                _tmp_st.pop(k)
+        # # ignore query embedding when changing num_queries
+        # # 把 num_queries 从 900 改成 600 以后，模型里 tgt_embed.weight 的形状变了，
+        # # 但加载的预训练权重（groundingdino_swint_ogc.pth）里还是 900×256，所以 load_state_dict 直接 size mismatch。
+        # # 预训练权重照常加载，唯独 transformer.tgt_embed.weight 不加载，让它随机初始化。
+        # for k in ["transformer.tgt_embed.weight"]:
+        #     if k in _tmp_st:
+        #         print(f"Pop key from checkpoint: {k}, shape={_tmp_st[k].shape}")
+        #         _tmp_st.pop(k)
+
+        # _load_output = model_without_ddp.load_state_dict(_tmp_st, strict=False)
+        # logger.info(str(_load_output))
+
+
+        tgt_key = "transformer.tgt_embed.weight"
+        if tgt_key in _tmp_st:
+            ckpt_w = _tmp_st[tgt_key]
+            model_w = model_without_ddp.transformer.tgt_embed.weight
+            if ckpt_w.shape != model_w.shape:
+                logger.warning(f"[num_queries changed] resize {tgt_key}: ckpt{tuple(ckpt_w.shape)} -> model{tuple(model_w.shape)}")
+                if ckpt_w.shape[0] > model_w.shape[0]:
+                    # q: 900 -> 600/300 直接裁剪
+                    _tmp_st[tgt_key] = ckpt_w[: model_w.shape[0]].contiguous()
+                else:
+                    # q: 小 -> 大（一般用不到），就 pad
+                    pad = model_w.new_zeros((model_w.shape[0] - ckpt_w.shape[0], ckpt_w.shape[1]))
+                    torch.nn.init.normal_(pad, mean=0.0, std=0.02)
+                    _tmp_st[tgt_key] = torch.cat([ckpt_w, pad], dim=0).contiguous()
 
         _load_output = model_without_ddp.load_state_dict(_tmp_st, strict=False)
+        logger.info("Load pretrained with resized queries:")
         logger.info(str(_load_output))
 
- 
-    
     if args.eval:
         os.environ['EVAL_FLAG'] = 'TRUE'
         test_stats, coco_evaluator = evaluate(model, criterion, postprocessors,
