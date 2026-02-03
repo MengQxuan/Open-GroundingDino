@@ -1,0 +1,18 @@
+{
+    "train": [
+        {
+            "root": "/autodl-fs/data/data/Open-GroundingDino/data/stanford_cars_20cls/train_images_1000",
+            "anno": "/autodl-fs/data/data/Open-GroundingDino/data/stanford_cars_20cls/annotations/train_1000.jsonl",
+            "label_map": "/autodl-fs/data/data/Open-GroundingDino/data/stanford_cars_20cls/annotations/label_map.json",
+            "dataset_mode": "odvg"
+        }
+    ],
+    "val": [
+        {
+            "root": "/autodl-fs/data/data/Open-GroundingDino/data/stanford_cars_20cls/val_images_100",
+            "anno": "/autodl-fs/data/data/Open-GroundingDino/data/stanford_cars_20cls/annotations/val_100.json",
+            "label_map": null,
+            "dataset_mode": "coco"
+        }
+    ]
+}
