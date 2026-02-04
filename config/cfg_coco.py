@@ -19,6 +19,11 @@ dropout = 0.0
 nheads = 8
 num_queries = 900
 query_dim = 4
+
+# # num_queries = 900
+# query_prune_topk = -1        # 训练时保留的 query 数。 -1 表示关闭；>=1 表示启用训练时 topk
+# query_prune_metric = "max"   # 打分方式。 先固定 "max"，后续再扩展
+
 num_patterns = 0
 num_feature_levels = 4
 enc_n_points = 4

@@ -237,3 +237,101 @@ Average Recall (AR) @[ IoU=0.50:0.95 | area= all | maxDets=100 ] = 0.752
 Average Recall (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.590 
 Average Recall (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.787 
 Average Recall (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.907
+
+
+
+10k1k_q300_prune200
+Averaged stats: 
+Accumulating evaluation results...
+DONE (t=4.04s).
+IoU metric: bbox
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.541
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.701
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.596
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.405
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.581
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.678
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.414
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.702
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.774
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.613
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.810
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.911
+Training time 1:50:31
+
+
+
+10k1k_q300_prune50
+Averaged stats: 
+Accumulating evaluation results...
+DONE (t=4.17s).
+IoU metric: bbox
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.545
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.702
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.601
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.383
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.591
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.690
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.414
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.697
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.760
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.563
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.798
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.903
+
+
+
+推理测速benchmark_infer
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 900
+batch_size: 4, warmup: 50, iters: 200
+latency ms (mean/p50/p90): 203.15 / 188.90 / 287.57
+FPS (mean/p50): 19.69 / 21.17
+===========================================
+
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 600
+batch_size: 4, warmup: 50, iters: 200
+latency ms (mean/p50/p90): 203.60 / 187.04 / 289.29
+FPS (mean/p50): 19.65 / 21.39
+===========================================
+
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200
+latency ms (mean/p50/p90): 202.97 / 179.67 / 277.32
+FPS (mean/p50): 19.71 / 22.26
+===========================================
+
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 200
+batch_size: 4, warmup: 50, iters: 200
+latency ms (mean/p50/p90): 203.88 / 185.00 / 293.18
+FPS (mean/p50): 19.62 / 21.62
+===========================================
+
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 50
+batch_size: 4, warmup: 50, iters: 200
+latency ms (mean/p50/p90): 202.82 / 187.66 / 279.52
+FPS (mean/p50): 19.72 / 21.31
+===========================================

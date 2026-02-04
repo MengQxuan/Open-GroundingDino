@@ -124,3 +124,30 @@ torchrun --nproc_per_node=2 main.py \
   --num_workers 4 \
   --amp \
   --save_log
+
+
+改变TOPK
+torchrun --nproc_per_node=2 main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --output_dir outputs/10k1k_q300_pruneTOPK \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --options text_encoder_type=weights/bert-base-uncased epochs=5 num_queries=300 query_prune_topk=TOPK \
+  --seed 42 \
+  --num_workers 8 \
+  --amp \
+  --save_log
+
+
+推理测速benchmark_infer
+  python tools/benchmark_infer.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --device cuda \
+  --num_workers 4 \
+  --num_queries 300 \
+  --warmup 50 \
+  --iters 200 \
+  --amp \
+  --forward_only
