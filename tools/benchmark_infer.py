@@ -29,7 +29,12 @@ def _cfg_to_args(args):
         if k not in args_vars:
             setattr(args, k, v)
         else:
-            raise ValueError(f"Key {k} can used by args only")
+            # CLI 优先：如果命令行没设置（None），才用 cfg 里的值
+            if getattr(args, k) is None:
+                setattr(args, k, v)
+            # 否则跳过，避免冲突
+            continue
+
 
     # main.py 里也会补 debug
     if not getattr(args, "debug", None):

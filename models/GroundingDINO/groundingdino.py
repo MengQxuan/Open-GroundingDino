@@ -21,7 +21,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torchvision.ops.boxes import nms
-from transformers import AutoTokenizer, BertModel, BertTokenizer, RobertaModel, RobertaTokenizerFast
+# 用 MiniLM替换BERT
+# from transformers import AutoTokenizer, BertModel, BertTokenizer, RobertaModel, RobertaTokenizerFast
+from transformers import AutoTokenizer, AutoModel, BertModel, BertTokenizer, RobertaModel, RobertaTokenizerFast
 
 from groundingdino.util import box_ops, get_tokenlizer
 from groundingdino.util.misc import (
@@ -39,11 +41,19 @@ from groundingdino.util.vl_utils import create_positive_map_from_span
 
 from ..registry import MODULE_BUILD_FUNCS
 from .backbone import build_backbone
+# 用 MiniLM替换BERT
+# from .bertwarper import (
+#     BertModelWarper,
+#     generate_masks_with_special_tokens,
+#     generate_masks_with_special_tokens_and_transfer_map,
+# )
 from .bertwarper import (
     BertModelWarper,
+    TextEncoderShell,
     generate_masks_with_special_tokens,
     generate_masks_with_special_tokens_and_transfer_map,
 )
+
 from .transformer import build_transformer
 from .utils import MLP, ContrastiveEmbed, sigmoid_focal_loss
 
@@ -107,20 +117,48 @@ class GroundingDINO(nn.Module):
         self.dn_label_noise_ratio = dn_label_noise_ratio
         self.dn_labelbook_size = dn_labelbook_size
 
-        # bert
-        self.tokenizer = get_tokenlizer.get_tokenlizer(text_encoder_type)
-        self.bert = get_tokenlizer.get_pretrained_language_model(text_encoder_type)
-        self.bert.pooler.dense.weight.requires_grad_(False)
-        self.bert.pooler.dense.bias.requires_grad_(False)
-        self.bert = BertModelWarper(bert_model=self.bert)
+        # 用 MiniLM替换BERT
+        # # bert
+        # self.tokenizer = get_tokenlizer.get_tokenlizer(text_encoder_type)
+        # self.bert = get_tokenlizer.get_pretrained_language_model(text_encoder_type)
+        # self.bert.pooler.dense.weight.requires_grad_(False)
+        # self.bert.pooler.dense.bias.requires_grad_(False)
+        # self.bert = BertModelWarper(bert_model=self.bert)
 
+        # self.feat_map = nn.Linear(self.bert.config.hidden_size, self.hidden_dim, bias=True)
+        # nn.init.constant_(self.feat_map.bias.data, 0)
+        # nn.init.xavier_uniform_(self.feat_map.weight.data)
+        # # freeze
+
+        # # special tokens
+        # self.specical_tokens = self.tokenizer.convert_tokens_to_ids(["[CLS]", "[SEP]", ".", "?"])
+
+
+        # text encoder (AutoModel / AutoTokenizer)
+        # - for MiniLM: text_encoder_type = "microsoft/MiniLM-L12-H384-uncased"
+        self.tokenizer = AutoTokenizer.from_pretrained(text_encoder_type, use_fast=True)
+        text_model = AutoModel.from_pretrained(text_encoder_type)
+
+        # (optional) freeze pooler dense if exists (same spirit as your current code)
+        if hasattr(text_model, "pooler") and text_model.pooler is not None and hasattr(text_model.pooler, "dense"):
+            text_model.pooler.dense.weight.requires_grad_(False)
+            text_model.pooler.dense.bias.requires_grad_(False)
+
+        # If it's a BertModel-like (has embeddings/encoder), you can keep using BertModelWarper.
+        # Otherwise, fall back to a generic shell.
+        if all(hasattr(text_model, k) for k in ["embeddings", "encoder", "get_extended_attention_mask", "invert_attention_mask", "get_head_mask"]):
+            self.bert = BertModelWarper(bert_model=text_model)
+        else:
+            self.bert = TextEncoderShell(text_model)
+
+        # map hidden_size -> d_model(=256)
         self.feat_map = nn.Linear(self.bert.config.hidden_size, self.hidden_dim, bias=True)
         nn.init.constant_(self.feat_map.bias.data, 0)
         nn.init.xavier_uniform_(self.feat_map.weight.data)
-        # freeze
 
-        # special tokens
+        # special tokens (MiniLM tokenizer also has these)
         self.specical_tokens = self.tokenizer.convert_tokens_to_ids(["[CLS]", "[SEP]", ".", "?"])
+
 
         # prepare input projection layers
         if num_feature_levels > 1:

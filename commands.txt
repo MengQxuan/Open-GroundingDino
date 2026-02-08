@@ -140,7 +140,7 @@ torchrun --nproc_per_node=2 main.py \
 
 
 推理测速benchmark_infer
-  python tools/benchmark_infer.py \
+python tools/benchmark_infer.py \
   --config_file config/cfg_coco.py \
   --datasets config/datasets_coco_10k1k.json \
   --pretrain_model_path weights/groundingdino_swint_ogc.pth \
@@ -151,3 +151,22 @@ torchrun --nproc_per_node=2 main.py \
   --iters 200 \
   --amp \
   --forward_only
+
+
+
+用MiniLM替换BERT
+
+torchrun --nproc_per_node=2 --master_port=29501 \
+main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --finetune_ignore bert tokenizer feat_map \
+  --output_dir outputs/minilm_q300_10k1k \
+  --seed 42 \
+  --options \
+    model.text_encoder_type=microsoft/MiniLM-L12-H384-uncased \
+    model.num_queries=300 \
+    train.epochs=5 \
+    train.batch_size=4 \
+    train.lr=1e-4
