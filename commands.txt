@@ -170,3 +170,48 @@ main.py \
     train.epochs=5 \
     train.batch_size=4 \
     train.lr=1e-4
+
+
+
+剪枝
+层数改成 enc=4, dec=3，用 finetune_ignore 把“多出来的层”显式忽略
+torchrun --nproc_per_node=2 --master_port=29501 main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --output_dir outputs/prune_enc4_dec3_q300_bert \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --finetune_ignore \
+    transformer.encoder.layers.4 \
+    transformer.encoder.layers.5 \
+    transformer.encoder.text_layers.4 \
+    transformer.encoder.text_layers.5 \
+    transformer.encoder.fusion_layers.4 \
+    transformer.encoder.fusion_layers.5 \
+    transformer.decoder.layers.3 \
+    transformer.decoder.layers.4 \
+    transformer.decoder.layers.5 \
+    transformer.decoder.bbox_embed.3 \
+    transformer.decoder.bbox_embed.4 \
+    transformer.decoder.bbox_embed.5 \
+  --options \
+    text_encoder_type=weights/bert-base-uncased \
+    epochs=20 \
+    num_queries=300 \
+    enc_layers=4 \
+    dec_layers=3 \
+  --num_workers 8 \
+  --amp \
+  --save_log
+
+
+PYTHONPATH=. python tools/benchmark_infer.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --pretrain_model_path outputs/prune_enc4_dec3_q300_bert/checkpoint_best_regular.pth \
+  --device cuda \
+  --num_workers 4 \
+  --num_queries 300 \
+  --warmup 50 \
+  --iters 200 \
+  --amp \
+  --forward_only
