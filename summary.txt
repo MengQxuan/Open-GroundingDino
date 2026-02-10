@@ -64,3 +64,44 @@ IoU metric: bbox
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.561
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.776
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.894
+
+ ================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200
+latency ms (mean/p50/p90): 187.39 / 186.19 / 190.94
+FPS (mean/p50): 21.35 / 21.48
+===========================================
+
+
+
+DistilBERT
+enc=4, dec=3, 用 finetune_ignore 把“多出来的层”显式忽略
+max_mem= 10582
+
+INFO     2026-02-10 20:49:40,950 | Epoch: [12] Total time: 0:15:40 (0.7847 s / it)
+IoU metric: bbox
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.532
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.691
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.581
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.375
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.569
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.664
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.403
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.680
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.750
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.585
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.782
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.898
+
+ ================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200
+latency ms (mean/p50/p90): 187.71 / 186.19 / 192.19
+FPS (mean/p50): 21.31 / 21.48
+===========================================

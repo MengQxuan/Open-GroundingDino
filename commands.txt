@@ -215,3 +215,23 @@ PYTHONPATH=. python tools/benchmark_infer.py \
   --iters 200 \
   --amp \
   --forward_only
+
+
+
+DistilBERT替换BERT
+torchrun --nproc_per_node=2 --master_port=29501 main.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --output_dir outputs/prune_enc4_dec3_q300_distilbert \
+  --pretrain_model_path weights/groundingdino_swint_ogc.pth \
+  --finetune_ignore \
+    transformer.encoder.layers.4 transformer.encoder.layers.5 \
+    transformer.encoder.text_layers.4 transformer.encoder.text_layers.5 \
+    transformer.encoder.fusion_layers.4 transformer.encoder.fusion_layers.5 \
+    transformer.decoder.layers.3 transformer.decoder.layers.4 transformer.decoder.layers.5 \
+    transformer.decoder.bbox_embed.3 transformer.decoder.bbox_embed.4 transformer.decoder.bbox_embed.5 \
+  --options \
+    text_encoder_type=weights/distilbert-base-uncased \
+    epochs=20 num_queries=300 enc_layers=4 dec_layers=3 \
+  --num_workers 8 --amp --save_log
+

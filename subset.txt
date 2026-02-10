@@ -101,6 +101,7 @@ Training time 2:53:43
 Auto DL
 
 10k1k_q900
+max_mem = 12154
 Averaged stats: 
 Accumulating evaluation results...
 DONE (t=3.84s).
@@ -141,6 +142,7 @@ Training time 2:01:19
 
 
 10k1k_q300
+max_mem = 11560
 Averaged stats: 
 Accumulating evaluation results...
 DONE (t=4.20s).
