@@ -254,20 +254,25 @@ def main(args):
                     return False
             return True
 
-        logger.info("Ignore keys: {}".format(json.dumps(ignorelist, indent=2)))
-        _tmp_st = OrderedDict({k:v for k, v in utils.clean_state_dict(checkpoint).items() if check_keep(k, _ignorekeywordlist)})
+        # logger.info("Ignore keys: {}".format(json.dumps(ignorelist, indent=2)))
+        # _tmp_st = OrderedDict({k:v for k, v in utils.clean_state_dict(checkpoint).items() if check_keep(k, _ignorekeywordlist)})
         
-        # # ignore query embedding when changing num_queries
-        # # 把 num_queries 从 900 改成 600 以后，模型里 tgt_embed.weight 的形状变了，
-        # # 但加载的预训练权重（groundingdino_swint_ogc.pth）里还是 900×256，所以 load_state_dict 直接 size mismatch。
-        # # 预训练权重照常加载，唯独 transformer.tgt_embed.weight 不加载，让它随机初始化。
-        # for k in ["transformer.tgt_embed.weight"]:
-        #     if k in _tmp_st:
-        #         print(f"Pop key from checkpoint: {k}, shape={_tmp_st[k].shape}")
-        #         _tmp_st.pop(k)
+        # 先构建过滤后的 state_dict（此时 check_keep 会把命中的 key append 到 ignorelist）
+        _tmp_st = OrderedDict({
+            k: v
+            for k, v in utils.clean_state_dict(checkpoint).items()
+            if check_keep(k, _ignorekeywordlist)
+        })
 
-        # _load_output = model_without_ddp.load_state_dict(_tmp_st, strict=False)
-        # logger.info(str(_load_output))
+        # 再打印：pattern + 命中数量 + 示例
+        logger.info("Finetune ignore patterns: {}".format(json.dumps(_ignorekeywordlist, indent=2)))
+        logger.info("Ignored {} keys (show first 50): {}".format(len(ignorelist), json.dumps(ignorelist[:50], indent=2)))
+
+        # 把完整列表落盘，避免 logger 太长
+        if args.rank == 0:
+            with open(os.path.join(args.output_dir, "ignored_keys.json"), "w") as f:
+                json.dump(ignorelist, f, indent=2)
+
 
 
         tgt_key = "transformer.tgt_embed.weight"

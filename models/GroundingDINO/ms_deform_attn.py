@@ -191,6 +191,10 @@ class MultiScaleDeformableAttention(nn.Module):
         self.value_proj = nn.Linear(embed_dim, embed_dim)
         self.output_proj = nn.Linear(embed_dim, embed_dim)
 
+        # --- quant/robustness knobs (default: off) ---
+        self.offset_clip = None          # float or None
+        self.softmax_fp32 = False        # bool
+
         self.init_weights()
 
     def _reset_parameters(self):
@@ -295,10 +299,20 @@ class MultiScaleDeformableAttention(nn.Module):
         sampling_offsets = self.sampling_offsets(query).view(
             bs, num_query, self.num_heads, self.num_levels, self.num_points, 2
         )
+        # 在 forward 里插入 offset clamp
+        if self.offset_clip is not None:
+            sampling_offsets = sampling_offsets.clamp(min=-self.offset_clip, max=self.offset_clip)
+
         attention_weights = self.attention_weights(query).view(
             bs, num_query, self.num_heads, self.num_levels * self.num_points
         )
-        attention_weights = attention_weights.softmax(-1)
+        # attention_weights = attention_weights.softmax(-1)
+        if self.softmax_fp32:
+            attn_dtype = attention_weights.dtype
+            attention_weights = attention_weights.float().softmax(-1).to(attn_dtype)
+        else:
+            attention_weights = attention_weights.softmax(-1)
+
         attention_weights = attention_weights.view(
             bs,
             num_query,

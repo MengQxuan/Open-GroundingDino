@@ -120,6 +120,9 @@ class Transformer(nn.Module):
             use_transformer_ckpt=use_transformer_ckpt,
         )
 
+        # decoder cross-attn sampling points override (for speed experiments)
+        cross_attn_n_points = getattr(args, "cross_attn_n_points", dec_n_points) if 'args' in locals() else dec_n_points
+
         # choose decoder layer type
         decoder_layer = DeformableTransformerDecoderLayer(
             d_model,
@@ -822,14 +825,29 @@ class DeformableTransformerDecoderLayer(nn.Module):
     ):
         super().__init__()
 
-        # cross attention
+        # # cross attention
+        # self.cross_attn = MSDeformAttn(
+        #     embed_dim=d_model,
+        #     num_levels=n_levels,
+        #     num_heads=n_heads,
+        #     num_points=n_points,
+        #     batch_first=True,
+        # )
+
+        # allow overriding decoder cross-attn sampling points (MSDeformAttn)
+        # 让 decoder cross-attn 的采样点数可配置（n_points）
+        # NOTE: default keeps original behavior.
+        self.cross_attn_n_points = getattr(
+            self, "cross_attn_n_points", n_points
+        )  # safe if attribute injected elsewhere
         self.cross_attn = MSDeformAttn(
             embed_dim=d_model,
             num_levels=n_levels,
             num_heads=n_heads,
-            num_points=n_points,
+            num_points=self.cross_attn_n_points,
             batch_first=True,
         )
+
         self.dropout1 = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
         self.norm1 = nn.LayerNorm(d_model)
 

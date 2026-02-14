@@ -48,20 +48,13 @@ from .bertwarper import (
     generate_masks_with_special_tokens,
     generate_masks_with_special_tokens_and_transfer_map,
 )
-# # 用 MiniLM替换BERT
-# from .bertwarper import (
-#     BertModelWarper,
-#     TextEncoderShell,
-#     generate_masks_with_special_tokens,
-#     generate_masks_with_special_tokens_and_transfer_map,
-# )
 
 from .transformer import build_transformer
 from .utils import MLP, ContrastiveEmbed, sigmoid_focal_loss
 
 from .matcher import build_matcher
 
-
+from .ms_deform_attn import MultiScaleDeformableAttention as MSDeformAttn
 
 
 class GroundingDINO(nn.Module):
@@ -1104,6 +1097,20 @@ def build_groundingdino(args):
         max_text_len=args.max_text_len,
     )
 
+    # ------------------------------------------------------------------
+    # Deformable Attn knobs (for speed/quant robustness experiments)
+    # Controlled by --options offset_clip=... softmax_fp32=...
+    # ------------------------------------------------------------------
+    offset_clip = getattr(args, "offset_clip", None)          # e.g., 8.0
+    softmax_fp32 = getattr(args, "softmax_fp32", False)       # True/False
+
+    if offset_clip is not None:
+        offset_clip = float(offset_clip)
+
+    for m in model.modules():
+        if isinstance(m, MSDeformAttn):
+            m.offset_clip = offset_clip
+            m.softmax_fp32 = bool(softmax_fp32)
 
 
     matcher = build_matcher(args)
