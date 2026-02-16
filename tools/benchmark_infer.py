@@ -36,7 +36,6 @@ def _cfg_to_args(args):
     return args
 
 
-
 def _load_dataset_meta(datasets_json_path):
     with open(datasets_json_path, "r", encoding="utf-8") as f:
         meta = json.load(f)
@@ -82,6 +81,23 @@ def _to_device(samples, targets, device):
     return samples, targets
 
 
+def _build_caption_from_len(caption_len: int, token: str = "a", suffix: str = ".") -> str:
+    caption_len = int(caption_len)
+    if caption_len <= 0:
+        return "person ."
+    cap = ("{} " * caption_len).format(*([token] * caption_len)).strip()
+    return cap + suffix
+
+
+def _load_caption_file(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                return line
+    return "person ."
+
+
 @torch.no_grad()
 def main():
     parser = get_args_parser()
@@ -90,8 +106,19 @@ def main():
     parser.add_argument("--warmup", type=int, default=50, help="warmup iters (not timed)")
     parser.add_argument("--iters", type=int, default=200, help="timed iters")
     parser.add_argument("--num_queries", type=int, default=None, help="override num_queries for speed test")
-    parser.add_argument("--caption", type=str, default="person .", help="non-empty caption")
+
+    # caption 控制（新增）
+    parser.add_argument("--caption", type=str, default="person .", help="caption text (used if caption_len/caption_file not set)")
+    parser.add_argument("--caption_len", type=int, default=None, help="if set, generate caption with N repeated tokens (e.g., 'a a a ...').")
+    parser.add_argument("--caption_token", type=str, default="a", help="token used when caption_len is set")
+    parser.add_argument("--caption_suffix", type=str, default=".", help="suffix appended to generated caption")
+    parser.add_argument("--caption_file", type=str, default=None, help="if set, load the first non-empty line as caption")
+
     parser.add_argument("--forward_only", action="store_true", help="only measure model forward (no postprocess)")
+
+    # 多 batch 平均（新增）
+    parser.add_argument("--num_batches", type=int, default=1,
+                        help="number of distinct batches to prefetch to GPU and rotate during timing (reduces outlier bias)")
     # =============================
 
     args = parser.parse_args()
@@ -102,11 +129,6 @@ def main():
     # datasets meta
     dataset_meta = _load_dataset_meta(args.datasets)
     _ensure_coco_val_path(args, dataset_meta)
-
-    # num_queries 只能走 args（不能放 options）
-    if args.num_queries is not None:
-        # main parser 里本来就有 num_queries，这里只是确保你命令行传入生效
-        pass
 
     if not getattr(args, "output_dir", None):
         args.output_dir = "./outputs/benchmark_tmp"
@@ -121,28 +143,56 @@ def main():
     model.to(device)
     model.eval()
 
-    # build loader & 取一个 batch（不把 dataloader 时间算进推理）
+    print("[DBG] text model class =", type(model.bert.text_encoder if hasattr(model.bert, "text_encoder") else model.bert))
+    
+    # build loader & 预取若干 batch（不把 dataloader / H2D 拷贝时间算进推理）
     loader = _build_val_loader(args, dataset_meta)
     it = iter(loader)
-    samples, targets = next(it)
 
-    # 先搬到 device（不计入耗时）
-    samples, targets = _to_device(samples, targets, device)
+    prefetched = []
+    target_bs = None
+    nb = max(1, int(args.num_batches))
+    for _ in range(nb):
+        try:
+            samples, targets = next(it)
+        except StopIteration:
+            break
+        samples, targets = _to_device(samples, targets, device)
+        bs = samples.tensors.shape[0]
+        if target_bs is None:
+            target_bs = bs
+        if bs != target_bs:
+            continue
+        prefetched.append((samples, targets))
+
+    if len(prefetched) == 0:
+        raise RuntimeError("No batches prefetched. Check dataset/loader settings.")
+
+    bs = target_bs
 
     # captions：固定 batch_size 个（避免每次循环构造列表的微小开销）
-    # 注意：最后一个 batch 可能小于 batch_size，但我们这里固定只测这个 batch，因此直接按 samples.tensors.shape[0]
-    bs = samples.tensors.shape[0]
-    captions = [args.caption] * bs
+    if args.caption_file:
+        cap = _load_caption_file(args.caption_file)
+    elif args.caption_len is not None:
+        cap = _build_caption_from_len(args.caption_len, token=args.caption_token, suffix=args.caption_suffix)
+    else:
+        cap = args.caption
+
+    captions = [cap] * bs
 
     # AMP context
     use_amp = bool(getattr(args, "amp", False)) and (device.type == "cuda")
-    amp_ctx = torch.autocast(device_type="cuda", dtype=torch.float16) if use_amp else torch.autocast(device_type="cpu", enabled=False)
+    if use_amp:
+        amp_ctx = torch.autocast(device_type="cuda", dtype=torch.float16)
+    else:
+        amp_ctx = torch.autocast(device_type="cpu", enabled=False)
 
     # ===== Warmup =====
     if device.type == "cuda":
         torch.cuda.synchronize()
 
-    for _ in range(args.warmup):
+    for i in range(args.warmup):
+        samples, targets = prefetched[i % len(prefetched)]
         with amp_ctx:
             outputs = model(samples, captions=captions)
             if not args.forward_only:
@@ -158,7 +208,8 @@ def main():
         starter = torch.cuda.Event(enable_timing=True)
         ender = torch.cuda.Event(enable_timing=True)
 
-        for _ in range(args.iters):
+        for i in range(args.iters):
+            samples, targets = prefetched[i % len(prefetched)]
             starter.record()
             with amp_ctx:
                 outputs = model(samples, captions=captions)
@@ -167,10 +218,9 @@ def main():
             ender.record()
             ender.synchronize()
             times_ms.append(starter.elapsed_time(ender))
-
     else:
-        # CPU：用 perf_counter（不建议用 CPU 测 GroundingDINO）
-        for _ in range(args.iters):
+        for i in range(args.iters):
+            samples, targets = prefetched[i % len(prefetched)]
             t0 = time.perf_counter()
             with amp_ctx:
                 outputs = model(samples, captions=captions)
@@ -183,7 +233,6 @@ def main():
     p50 = statistics.median(times_ms)
     p90 = sorted(times_ms)[int(0.9 * (len(times_ms) - 1))]
 
-    # FPS 按 batch 计算：FPS = batch_size / latency_sec
     mean_fps = bs / (mean_ms / 1000.0)
     p50_fps = bs / (p50 / 1000.0)
 
@@ -192,7 +241,10 @@ def main():
     print(f"device: {args.device}")
     print(f"amp: {use_amp}")
     print(f"num_queries: {args.num_queries}")
-    print(f"batch_size: {bs}, warmup: {args.warmup}, iters: {args.iters}")
+    print(f"batch_size: {bs}, warmup: {args.warmup}, iters: {args.iters}, num_batches: {len(prefetched)}")
+    print(f"caption: {cap!r}")
+    if args.caption_len is not None:
+        print(f"caption_len: {args.caption_len} (token={args.caption_token!r})")
     print(f"latency ms (mean/p50/p90): {mean_ms:.2f} / {p50:.2f} / {p90:.2f}")
     print(f"FPS (mean/p50): {mean_fps:.2f} / {p50_fps:.2f}")
     print("===========================================\n")

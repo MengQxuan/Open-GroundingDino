@@ -22,9 +22,8 @@ import torch.nn.functional as F
 from torch import nn
 from torchvision.ops.boxes import nms
 
-from transformers import AutoTokenizer, BertModel, BertTokenizer, RobertaModel, RobertaTokenizerFast
-# # 用 MiniLM替换BERT
-# from transformers import AutoTokenizer, AutoModel, BertModel, BertTokenizer, RobertaModel, RobertaTokenizerFast
+# from transformers import AutoTokenizer, BertModel, BertTokenizer, RobertaModel, RobertaTokenizerFast
+from transformers import AutoTokenizer, AutoModel, BertTokenizer, RobertaTokenizerFast
 
 from groundingdino.util import box_ops, get_tokenlizer
 from groundingdino.util.misc import (
@@ -55,6 +54,54 @@ from .utils import MLP, ContrastiveEmbed, sigmoid_focal_loss
 from .matcher import build_matcher
 
 from .ms_deform_attn import MultiScaleDeformableAttention as MSDeformAttn
+
+from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions
+
+class TextEncoderShell(torch.nn.Module):
+    """
+    通用文本塔壳：适配 DistilBERT / MiniLM / Roberta 等 AutoModel 输出，
+    并透传 config，保证 GroundingDINO 后续能访问 hidden_size 等属性。
+    """
+    def __init__(self, text_model: torch.nn.Module):
+        super().__init__()
+        self.text_model = text_model
+        # 关键：透传 config（否则 self.bert.config.hidden_size 会炸）
+        self.config = getattr(text_model, "config", None)
+        print("[DBG] base text_model =", type(text_model))
+
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,   # ignore
+        position_ids=None,     # ignore
+        head_mask=None,        # ignore
+        inputs_embeds=None,
+        encoder_hidden_states=None,     # ignore
+        encoder_attention_mask=None,    # ignore
+        past_key_values=None,           # ignore
+        use_cache=None,                # ignore
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        **kwargs,
+    ):
+        # DistilBERT不支持 token_type_ids / position_ids 等，统一只传兼容参数
+        out = self.text_model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=True,
+        )
+        return BaseModelOutputWithPoolingAndCrossAttentions(
+            last_hidden_state=out.last_hidden_state,
+            pooler_output=getattr(out, "pooler_output", None),
+            hidden_states=getattr(out, "hidden_states", None),
+            attentions=getattr(out, "attentions", None),
+            cross_attentions=getattr(out, "cross_attentions", None),
+        )
 
 
 class GroundingDINO(nn.Module):
@@ -112,47 +159,50 @@ class GroundingDINO(nn.Module):
         self.dn_label_noise_ratio = dn_label_noise_ratio
         self.dn_labelbook_size = dn_labelbook_size
 
-        # bert
-        self.tokenizer = get_tokenlizer.get_tokenlizer(text_encoder_type)
-        self.bert = get_tokenlizer.get_pretrained_language_model(text_encoder_type)
-        self.bert.pooler.dense.weight.requires_grad_(False)
-        self.bert.pooler.dense.bias.requires_grad_(False)
-        self.bert = BertModelWarper(bert_model=self.bert)
+        # # bert
+        # self.tokenizer = get_tokenlizer.get_tokenlizer(text_encoder_type)
+        # self.bert = get_tokenlizer.get_pretrained_language_model(text_encoder_type)
+        # self.bert.pooler.dense.weight.requires_grad_(False)
+        # self.bert.pooler.dense.bias.requires_grad_(False)
+        # self.bert = BertModelWarper(bert_model=self.bert)
 
-        self.feat_map = nn.Linear(self.bert.config.hidden_size, self.hidden_dim, bias=True)
+        # text encoder (AutoModel / AutoTokenizer)  supports bert/distilbert/minilm...
+        from transformers import AutoTokenizer, AutoModel
+
+        self.tokenizer = AutoTokenizer.from_pretrained(text_encoder_type, use_fast=True)
+        text_model = AutoModel.from_pretrained(text_encoder_type)
+
+        # freeze pooler dense if exists (BERT有，DistilBERT通常没有)
+        if hasattr(text_model, "pooler") and text_model.pooler is not None and hasattr(text_model.pooler, "dense"):
+            text_model.pooler.dense.weight.requires_grad_(False)
+            text_model.pooler.dense.bias.requires_grad_(False)
+
+        # 如果是“BERT-like”（有embeddings/encoder/那些mask函数），就走 BertModelWarper
+        # 否则就走一个通用壳：TextEncoderShell（直接调用 model.forward）
+        is_bert_like = all(
+            hasattr(text_model, k)
+            for k in ["embeddings", "encoder", "get_extended_attention_mask", "invert_attention_mask", "get_head_mask"]
+        )
+
+        if is_bert_like:
+            self.bert = BertModelWarper(bert_model=text_model)
+        else:
+            # DistilBERT / MiniLM 等走这里
+            self.bert = TextEncoderShell(text_model)
+
+        # self.feat_map = nn.Linear(self.bert.config.hidden_size, self.hidden_dim, bias=True)
+        text_hidden = getattr(self.bert.config, "hidden_size", None)
+        if text_hidden is None:
+            text_hidden = getattr(self.bert.config, "dim", None)  # distilbert/一些模型可能用 dim
+        assert text_hidden is not None, f"Cannot infer text hidden size from config: {self.bert.config}"
+        self.feat_map = nn.Linear(text_hidden, self.hidden_dim, bias=True)
+
         nn.init.constant_(self.feat_map.bias.data, 0)
         nn.init.xavier_uniform_(self.feat_map.weight.data)
         # freeze
 
         # special tokens
         self.specical_tokens = self.tokenizer.convert_tokens_to_ids(["[CLS]", "[SEP]", ".", "?"])
-
-        # # 用 MiniLM替换BERT
-        # # text encoder (AutoModel / AutoTokenizer)
-        # # - for MiniLM: text_encoder_type = "microsoft/MiniLM-L12-H384-uncased"
-        # self.tokenizer = AutoTokenizer.from_pretrained(text_encoder_type, use_fast=True)
-        # text_model = AutoModel.from_pretrained(text_encoder_type)
-
-        # # (optional) freeze pooler dense if exists (same spirit as your current code)
-        # if hasattr(text_model, "pooler") and text_model.pooler is not None and hasattr(text_model.pooler, "dense"):
-        #     text_model.pooler.dense.weight.requires_grad_(False)
-        #     text_model.pooler.dense.bias.requires_grad_(False)
-
-        # # If it's a BertModel-like (has embeddings/encoder), you can keep using BertModelWarper.
-        # # Otherwise, fall back to a generic shell.
-        # if all(hasattr(text_model, k) for k in ["embeddings", "encoder", "get_extended_attention_mask", "invert_attention_mask", "get_head_mask"]):
-        #     self.bert = BertModelWarper(bert_model=text_model)
-        # else:
-        #     self.bert = TextEncoderShell(text_model)
-
-        # # map hidden_size -> d_model(=256)
-        # self.feat_map = nn.Linear(self.bert.config.hidden_size, self.hidden_dim, bias=True)
-        # nn.init.constant_(self.feat_map.bias.data, 0)
-        # nn.init.xavier_uniform_(self.feat_map.weight.data)
-
-        # # special tokens (MiniLM tokenizer also has these)
-        # self.specical_tokens = self.tokenizer.convert_tokens_to_ids(["[CLS]", "[SEP]", ".", "?"])
-
 
         # prepare input projection layers
         if num_feature_levels > 1:
@@ -288,15 +338,31 @@ class GroundingDINO(nn.Module):
             tokenized["attention_mask"] = tokenized["attention_mask"][:, : self.max_text_len]
             tokenized["token_type_ids"] = tokenized["token_type_ids"][:, : self.max_text_len]
 
-        # extract text embeddings
-        if self.sub_sentence_present:
+        # # extract text embeddings
+        # if self.sub_sentence_present:
+        #     tokenized_for_encoder = {k: v for k, v in tokenized.items() if k != "attention_mask"}
+        #     tokenized_for_encoder["attention_mask"] = text_self_attention_masks
+        #     tokenized_for_encoder["position_ids"] = position_ids
+        # else:
+        #     tokenized_for_encoder = tokenized
+
+        # bert_output = self.bert(**tokenized_for_encoder)  # bs, 195, 768
+
+
+        #DistilBERT 时强制走普通 token mask
+        use_3d_text_mask = self.sub_sentence_present and (not isinstance(self.bert, TextEncoderShell))
+        if use_3d_text_mask:
             tokenized_for_encoder = {k: v for k, v in tokenized.items() if k != "attention_mask"}
-            tokenized_for_encoder["attention_mask"] = text_self_attention_masks
+            tokenized_for_encoder["attention_mask"] = text_self_attention_masks  # 3D [bs,L,L]
             tokenized_for_encoder["position_ids"] = position_ids
         else:
-            tokenized_for_encoder = tokenized
+            # DistilBERT/AutoModel 路径：只用标准 2D attention_mask [bs,L]
+            tokenized_for_encoder = {
+                "input_ids": tokenized["input_ids"],
+                "attention_mask": tokenized["attention_mask"],
+            }
+        bert_output = self.bert(**tokenized_for_encoder)
 
-        bert_output = self.bert(**tokenized_for_encoder)  # bs, 195, 768
 
         encoded_text = self.feat_map(bert_output["last_hidden_state"])  # bs, 195, d_model
         text_token_mask = tokenized.attention_mask.bool()  # bs, 195

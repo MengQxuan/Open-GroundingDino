@@ -217,3 +217,139 @@ python tools/coco2odvg.py \
 * 多层 Attention 稀释冗余
 * Hungarian Matching 过滤
 * Decoder 多轮 Refinement
+
+
+## 11. 结构剪枝与轻量化优化实验（2026.02 更新）
+
+在完成 Query 冗余性分析后，进一步围绕 **Transformer 结构剪枝与跨模态推理加速** 展开系统优化实验。
+
+### 11.1 Transformer 层剪枝
+
+通过裁剪 Encoder / Decoder 层数，降低整体计算复杂度：
+
+| 配置       | Encoder | Decoder | Queries | AP@0.5:0.95  |
+| -------- | ------- | ------- | ------- | ------------ |
+| Baseline | 6       | 6       | 300     | ~0.556       |
+| Pruned   | 4       | 3       | 300     | ~0.519–0.522 |
+
+采用 `--finetune_ignore` 显式忽略被裁剪层参数，实现无冲突加载预训练权重。
+
+结论：
+
+> 适度剪枝可显著减少计算量，精度下降约 3%，处于可接受范围。
+
+---
+
+### 11.2 Cross-Attention 降采样（num_points=2）
+
+在 MSDeformAttn 中减少采样点数量：
+
+```bash
+dec_n_points=2
+```
+
+实验结果：
+
+| 设置             | AP     |
+| -------------- | ------ |
+| np=4 (default) | ~0.522 |
+| np=2           | ~0.519 |
+
+结论：
+
+> 降采样可减少 Attention 计算量，对精度影响较小。
+
+---
+
+### 11.3 Offset Clamp + Softmax FP32 稳定化
+
+为提升量化与混合精度稳定性，引入：
+
+* Sampling offset 限幅（offset clip）
+* Softmax 保持 FP32
+* BBox Head 保持 FP32
+
+作用：
+
+> 抑制数值抖动，提高后续量化鲁棒性。
+
+---
+
+### 11.4 DistilBERT 替换文本编码器
+
+将文本编码器从 BERT-base 替换为 DistilBERT：
+
+```bash
+text_encoder_type=weights/distilbert-base-uncased
+```
+
+并修复：
+
+* 3D attention mask 不兼容问题
+* token_type_ids / position_ids 冲突
+
+最终采用统一 TextEncoderShell 封装。
+
+精度与显存表现：
+
+| 模型         | AP     | Max Mem |
+| ---------- | ------ | ------- |
+| BERT       | ~0.514 | ~10.5GB |
+| DistilBERT | ~0.512 | ~9.7GB  |
+
+结论：
+
+> DistilBERT 在保持精度的同时降低显存占用，但端到端加速有限。
+
+---
+
+### 11.5 Caption 长度对推理性能影响
+
+扩展 benchmark 脚本，支持可控 caption 长度测试：
+
+| Caption Len | P50 Latency (ms) | FPS |
+| ----------- | ---------------- | --- |
+| 4           | ~168             | ~24 |
+| 128         | ~231             | ~17 |
+
+结论：
+
+> 长文本显著增加推理延迟，文本塔在长 prompt 场景下成为重要瓶颈。
+
+---
+
+### 11.6 多阶段轻量化优化路线
+
+当前已完成阶段：
+
+| Stage  | 内容            | 状态     |
+| ------ | ------------- | ------ |
+| Stage1 | Layer Pruning | ✅      |
+| Stage2 | np2 Sampling  | ✅      |
+| Stage3 | Offset + FP32 | ✅      |
+| Stage4 | DistilBERT    | ✅      |
+| Stage5 | Text INT8     | 🔄 进行中 |
+| Stage6 | Vision QAT    | ⏳ 规划中  |
+
+Stage4 最终配置：
+
+> Pruning + np2 + offset_clip + softmax_fp32 + DistilBERT
+
+达成：
+
+* AP ≈ 0.512
+* 显存 < 10GB
+* 推理稳定
+
+---
+
+## 12. 当前总体结论
+
+综合 Query 消融与结构轻量化实验，可得：
+
+1. GroundingDINO Queries 冗余严重
+2. 主瓶颈在 Backbone + Deformable Attention
+3. 层剪枝 + 降采样具备较高性价比
+4. 文本塔仅在长 prompt 下影响明显
+5. DistilBERT 更适合作为量化前置模型
+6. 纯结构优化对端到端加速有限，需结合 INT8 / 部署优化

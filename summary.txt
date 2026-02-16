@@ -211,3 +211,72 @@ batch_size: 4, warmup: 50, iters: 200
 latency ms (mean/p50/p90): 187.29 / 185.18 / 192.95
 FPS (mean/p50): 21.36 / 21.60
 ===========================================
+
+
+BERT 明显拖慢推理
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a.'
+caption_len: 4 (token='a')
+latency ms (mean/p50/p90): 164.02 / 168.01 / 186.86
+FPS (mean/p50): 24.39 / 23.81
+===========================================
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a.'
+caption_len: 128 (token='a')
+latency ms (mean/p50/p90): 224.13 / 230.46 / 255.36
+FPS (mean/p50): 17.85 / 17.36
+===========================================
+
+
+
+Stage4：剪枝 + np2 + offset_clip + softmax_fp32 + distilbert
+max mem: 9764
+INFO     2026-02-15 23:45:34,078 | Epoch: [12] Total time: 0:15:17 (0.7341 s / it)
+IoU metric: bbox
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.512
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.679
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.559
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.373
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.537
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.640
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.394
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.656
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.731
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.552
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.757
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.890
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a.'
+caption_len: 4 (token='a')
+latency ms (mean/p50/p90): 161.91 / 167.62 / 184.08
+FPS (mean/p50): 24.71 / 23.86
+===========================================
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a.'
+caption_len: 128 (token='a')
+latency ms (mean/p50/p90): 225.45 / 230.65 / 257.05
+FPS (mean/p50): 17.74 / 17.34
+===========================================
