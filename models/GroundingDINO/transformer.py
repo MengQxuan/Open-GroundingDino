@@ -258,6 +258,17 @@ class Transformer(nn.Module):
         #########################################################
         # Begin Encoder
         #########################################################
+
+        # [Stage5 split] encoder 计时（只在 profile 开启且 cuda 上生效）
+        _prof = None
+        _enc_s = _enc_e = None
+        if text_dict is not None:
+            _prof = text_dict.get("__profile", None)
+        if (_prof is not None) and (src_flatten.device.type == "cuda"):
+            _enc_s = torch.cuda.Event(enable_timing=True)
+            _enc_e = torch.cuda.Event(enable_timing=True)
+            _enc_s.record()
+        
         memory, memory_text = self.encoder(
             src_flatten,
             pos=lvl_pos_embed_flatten,
@@ -270,7 +281,14 @@ class Transformer(nn.Module):
             # we ~ the mask . False means use the token; True means pad the token
             position_ids=text_dict["position_ids"],
             text_self_attention_masks=text_dict["text_self_attention_masks"],
+            profile=_prof,
         )
+
+        if _enc_e is not None:
+            _enc_e.record()
+            _enc_e.synchronize()
+            _prof["T_encoder_ms"] = _enc_s.elapsed_time(_enc_e)
+
         #########################################################
         # End Encoder
         # - memory: bs, \sum{hw}, c
@@ -367,6 +385,13 @@ class Transformer(nn.Module):
 
         #memory  torch.Size([2, 16320, 256])
 
+        # [Stage5 split] decoder 计时（只在 profile 开启且 cuda 上生效）
+        _dec_s = _dec_e = None
+        if (_prof is not None) and (src_flatten.device.type == "cuda"):
+            _dec_s = torch.cuda.Event(enable_timing=True)
+            _dec_e = torch.cuda.Event(enable_timing=True)
+            _dec_s.record()
+
         # import pdb;pdb.set_trace()
         hs, references = self.decoder(
             tgt=tgt.transpose(0, 1),
@@ -382,6 +407,12 @@ class Transformer(nn.Module):
             text_attention_mask=~text_dict["text_token_mask"],
             # we ~ the mask . False means use the token; True means pad the token
         )
+
+        if _dec_e is not None:
+            _dec_e.record()
+            _dec_e.synchronize()
+            _prof["T_decoder_ms"] = _dec_s.elapsed_time(_dec_e)
+
         #########################################################
         # End Decoder
         # hs: n_dec, bs, nq, d_model
@@ -501,6 +532,8 @@ class TransformerEncoder(nn.Module):
         pos_text: Tensor = None,
         text_self_attention_masks: Tensor = None,
         position_ids: Tensor = None,
+        # [Stage6-0] profile dict for fine-grained timing
+        profile: dict = None,
     ):
         """
         Input:
@@ -524,6 +557,20 @@ class TransformerEncoder(nn.Module):
         """
 
         output = src
+
+        # ==========================
+        # [Stage6-0] encoder split profile
+        # ==========================
+        do_prof = (profile is not None) and (src.device.type == "cuda")
+        if do_prof:
+            # sums
+            _enc_fusion_sum = 0.0
+            _enc_text_sum = 0.0
+            _enc_msdeform_sum = 0.0
+            # per-layer lists (optional but very useful)
+            _enc_fusion_list = []
+            _enc_text_list = []
+            _enc_msdeform_list = []
 
         # preparation and reshape
         if self.num_layers > 0:
@@ -553,8 +600,66 @@ class TransformerEncoder(nn.Module):
             # if output.isnan().any() or memory_text.isnan().any():
             #     if os.environ.get('IPDB_SHILONG_DEBUG', None) == 'INFO':
             #         import ipdb; ipdb.set_trace()
+
+            # if self.fusion_layers:
+            #     if self.use_checkpoint:
+            #         output, memory_text = checkpoint.checkpoint(
+            #             self.fusion_layers[layer_id],
+            #             output,
+            #             memory_text,
+            #             key_padding_mask,
+            #             text_attention_mask,
+            #         )
+            #     else:
+            #         output, memory_text = self.fusion_layers[layer_id](
+            #             v=output,
+            #             l=memory_text,
+            #             attention_mask_v=key_padding_mask,
+            #             attention_mask_l=text_attention_mask,
+            #         )
+
+            # if self.text_layers:
+            #     memory_text = self.text_layers[layer_id](
+            #         src=memory_text.transpose(0, 1),
+            #         src_mask=~text_self_attention_masks,  # note we use ~ for mask here
+            #         src_key_padding_mask=text_attention_mask,
+            #         pos=(pos_text.transpose(0, 1) if pos_text is not None else None),
+            #     ).transpose(0, 1)
+
+            # # main process
+            # if self.use_transformer_ckpt:
+            #     output = checkpoint.checkpoint(
+            #         layer,
+            #         output,
+            #         pos,
+            #         reference_points,
+            #         spatial_shapes,
+            #         level_start_index,
+            #         key_padding_mask,
+            #     )
+            # else:
+            #     output = layer(
+            #         src=output,
+            #         pos=pos,
+            #         reference_points=reference_points,
+            #         spatial_shapes=spatial_shapes,
+            #         level_start_index=level_start_index,
+            #         key_padding_mask=key_padding_mask,
+            #     )
+            # main process (deformable self-attn encoder layer)
+
             if self.fusion_layers:
+                if do_prof:
+                    _fs = torch.cuda.Event(enable_timing=True)
+                    _fe = torch.cuda.Event(enable_timing=True)
+                    _fs.record()
+
+                    # ✅ 关键：无论是否 checkpoint，都先把 profile 注入到 fusion layer
+                    self.fusion_layers[layer_id]._profile = profile
+                    self.fusion_layers[layer_id]._profile_layer_id = layer_id
+
                 if self.use_checkpoint:
+                    # checkpoint 走位置参数：v, l, attention_mask_v, attention_mask_l
                     output, memory_text = checkpoint.checkpoint(
                         self.fusion_layers[layer_id],
                         output,
@@ -570,7 +675,23 @@ class TransformerEncoder(nn.Module):
                         attention_mask_l=text_attention_mask,
                     )
 
+                if do_prof:
+                    # ✅ 关键：清理，避免下一次误用
+                    self.fusion_layers[layer_id]._profile = None
+                    self.fusion_layers[layer_id]._profile_layer_id = None
+
+                    _fe.record()
+                    _fe.synchronize()
+                    _dt = _fs.elapsed_time(_fe)
+                    _enc_fusion_sum += _dt
+                    _enc_fusion_list.append(_dt)
+
             if self.text_layers:
+                if do_prof:
+                    _ts = torch.cuda.Event(enable_timing=True)
+                    _te = torch.cuda.Event(enable_timing=True)
+                    _ts.record()
+
                 memory_text = self.text_layers[layer_id](
                     src=memory_text.transpose(0, 1),
                     src_mask=~text_self_attention_masks,  # note we use ~ for mask here
@@ -578,7 +699,18 @@ class TransformerEncoder(nn.Module):
                     pos=(pos_text.transpose(0, 1) if pos_text is not None else None),
                 ).transpose(0, 1)
 
-            # main process
+                if do_prof:
+                    _te.record()
+                    _te.synchronize()
+                    _dt = _ts.elapsed_time(_te)
+                    _enc_text_sum += _dt
+                    _enc_text_list.append(_dt)
+
+            if do_prof:
+                _ms = torch.cuda.Event(enable_timing=True)
+                _me = torch.cuda.Event(enable_timing=True)
+                _ms.record()
+
             if self.use_transformer_ckpt:
                 output = checkpoint.checkpoint(
                     layer,
@@ -599,6 +731,25 @@ class TransformerEncoder(nn.Module):
                     key_padding_mask=key_padding_mask,
                 )
 
+            if do_prof:
+                _me.record()
+                _me.synchronize()
+                _dt = _ms.elapsed_time(_me)
+                _enc_msdeform_sum += _dt
+                _enc_msdeform_list.append(_dt)
+
+        # ==========================
+        # [Stage6-0] write encoder split profile
+        # ==========================
+        if do_prof:
+            profile["T_enc_fusion_ms"] = _enc_fusion_sum
+            profile["T_enc_text_ms"] = _enc_text_sum
+            profile["T_enc_msdeform_ms"] = _enc_msdeform_sum
+            # per-layer (optional)
+            profile["enc_fusion_ms_list"] = _enc_fusion_list
+            profile["enc_text_ms_list"] = _enc_text_list
+            profile["enc_msdeform_ms_list"] = _enc_msdeform_list
+        
         return output, memory_text
 
 

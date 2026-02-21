@@ -353,3 +353,242 @@ Stage4 最终配置：
 4. 文本塔仅在长 prompt 下影响明显
 5. DistilBERT 更适合作为量化前置模型
 6. 纯结构优化对端到端加速有限，需结合 INT8 / 部署优化
+
+
+
+## Stage5：文本塔 Profiling 与 Caption Length 影响分析
+
+### 实验设置
+
+- 模式：forward_only
+- 设备：NVIDIA GPU（CUDA）
+- batch_size = 4
+- num_queries = 300
+- warmup = 50, iters = 200
+- AMP：开启
+- 数据集：COCO val 子集
+- Profiling：启用 profile_split，拆分 tokenize / text encoder / vision+decoder
+
+测试 caption 长度：
+
+\[
+L \in \{4, 16, 32, 64, 128\}
+\]
+
+---
+
+### 不同 Caption 长度下的延迟统计
+
+单位：毫秒（mean）
+
+| Caption Length | T_tokenize | T_text_enc | T_vision+dec | T_total |
+|----------------|------------|------------|-------------|---------|
+| 4              | 0.36       | 4.20       | 154.10      | 160.14  |
+| 16             | 0.45       | 4.19       | 158.32      | 164.42  |
+| 32             | 0.59       | 4.20       | 163.06      | 169.34  |
+| 64             | 0.88       | 4.17       | 183.53      | 190.11  |
+| 128            | 1.40       | 4.33       | 215.05      | 222.42  |
+
+---
+
+### Caption 长度对各模块延迟的影响
+
+#### 1. Tokenization 阶段
+
+Tokenization 运行于 CPU，其耗时随文本长度近似线性增长：
+
+- 从 0.36 ms 增长至 1.40 ms
+- 总体占比低于 1%
+
+表明其不是系统瓶颈。
+
+---
+
+#### 2. 文本编码器阶段（Text Encoder）
+
+Text Encoder 运行于 GPU，其延迟基本保持稳定：
+
+- 始终约为 4 ms
+- 与 caption 长度变化几乎无关
+
+说明文本编码主要受固定计算开销主导。
+
+---
+
+#### 3. 视觉与解码阶段（Vision + Decoder）
+
+Vision + Decoder 模块占据主要计算开销：
+
+- 从 154.10 ms 增长至 215.05 ms
+- 增量约为 61 ms
+
+该增长与 caption 长度高度相关，说明 Transformer 中的文本-视觉融合模块
+（如 Cross-Attention）是主要瓶颈来源。
+
+---
+
+### 延迟增长贡献分析
+
+当 caption 长度从 4 增长至 128 时：
+
+| 模块          | 增量 (ms) | 占比 (%) |
+|---------------|-----------|----------|
+| Tokenize      | +1.04     | 1.7%      |
+| Text Encoder  | +0.13     | 0.2%      |
+| Vision+Decoder| +60.95    | 97.9%     |
+| Total         | +62.28    | 100%      |
+
+可见，超过 97% 的延迟增长来源于 Vision+Decoder 阶段。
+
+---
+
+### 曲线趋势分析
+
+整体趋势如下：
+
+- T_tokenize 随 caption 长度线性增长
+- T_text_enc 基本保持不变
+- T_vision+dec 随 caption 长度显著增长
+- T_total 主要由 T_vision+dec 决定
+
+（对应折线图如 Fig. X 所示）
+
+---
+
+### Stage5 实验结论
+
+1. 单独优化或量化 Text Encoder 对端到端延迟影响有限；
+2 长 Caption 场景下的性能瓶颈主要位于 Transformer 的文本-视觉融合模块；
+3. Text Encoder 的 INT8 量化适合作为可行性验证手段，而非主要加速来源；
+4. 后续优化应聚焦 Decoder / Cross-Attention 等融合结构。
+
+该结论为 Stage6 中针对 Decoder 的混合精度量化与 QAT 优化提供了直接依据。
+
+---
+
+## Stage6-0：Encoder 内部细分 Profiling（caption_len 扫描）
+
+本节记录对 GroundingDINO **端到端推理**进行分段计时（tokenize / text encoder / backbone / transformer / heads），并进一步对 **Transformer Encoder** 内部进行细分，定位 caption 变长导致延迟上升的真正瓶颈。
+
+- 模式：`forward_only`
+- 设备：`cuda`，AMP：`True`
+- 固定参数：`batch_size=4, num_queries=300, warmup=50, iters=200, num_batches=8`
+- caption_len：`{4, 16, 32, 64, 128}`（caption 内容为重复 token `"a"`）
+- 计时统计：均值（mean）/中位数（p50）
+
+---
+
+### 1. 总体结论
+
+随着 `caption_len` 增大，端到端延迟上升几乎**全部来自 Transformer Encoder 内的 fusion 模块（enc_fusion）**；进一步拆分后发现，**增长几乎完全由 fusion attention 中的 `softmax` 与 `context bmm`（以及部分 `scores(QK^T)`）造成**，而文本塔（`text_enc`）、主干 backbone、以及 Deformable Encoder（`enc_msdef`）基本不随文本长度变化。
+
+---
+
+### 2. 端到端与模块级延迟（mean）
+
+| caption_len | T_total | tokenize | text_enc | backbone | transfmr | enc | dec | enc_fusion | enc_text | enc_msdef |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 4   | 171.72 | 0.355 | 4.109 | 42.955 | 118.583 | 97.024 | 15.331 | 40.973 | 4.762 | 49.801 |
+| 16  | 176.42 | 0.486 | 4.206 | 42.994 | 121.493 | 99.145 | 16.021 | 42.780 | 4.856 | 49.913 |
+| 32  | 182.96 | 0.565 | 4.115 | 43.755 | 125.485 | 103.935 | 15.388 | 47.002 | 4.609 | 50.837 |
+| 64  | 201.24 | 0.873 | 4.201 | 42.925 | 140.578 | 118.783 | 15.508 | 62.192 | 4.875 | 50.175 |
+| 128 | 235.25 | 1.349 | 4.170 | 43.054 | 165.977 | 143.607 | 15.875 | 86.882 | 5.075 | 50.100 |
+
+> 观察：
+> - `text_enc` 约 **4ms**，随 `caption_len` 基本不变（不是瓶颈）。
+> - `backbone` 约 **43ms**，基本不变。
+> - `dec` 约 **15~16ms**，基本不变。
+> - `enc_msdef`（Deformable Encoder 主干）约 **50ms**，基本不变。
+> - **enc_fusion** 从 **40.97ms → 86.88ms**，随 `caption_len` 显著增长，是主要瓶颈。
+
+---
+
+### 3. caption_len 增长的增量归因（len=4 → 128, mean）
+
+- 总延迟：`171.72 → 235.25`，**+63.53 ms**
+- tokenize：`0.355 → 1.349`，**+0.994 ms**
+- text_enc：`4.109 → 4.170`，**+0.061 ms（几乎不变）**
+- backbone：`42.955 → 43.054`，**+0.099 ms（几乎不变）**
+- transformer(enc+dec)：`118.583 → 165.977`，**+47.394 ms**
+  - enc：`97.024 → 143.607`，**+46.583 ms**
+    - **enc_fusion：`40.973 → 86.882`，+45.909 ms（≈98% 的 encoder 增量）**
+    - enc_text：`4.762 → 5.075`，+0.313 ms
+    - enc_msdef：`49.801 → 50.100`，+0.299 ms
+  - dec：`15.331 → 15.875`，+0.544 ms
+
+> 核心结论：**encoder 的增量几乎全部来自 enc_fusion。**
+
+---
+
+### 4. enc_fusion 内部进一步细分（mean）
+
+enc_fusion 由 `BiAttentionBlock(BiMultiHeadAttention)` 实现，可拆为：
+- LN（layer_norm_v/l）
+- fusion_attn（BiMultiHeadAttention 总体）
+- residual（drop_path + gamma + 残差）
+
+#### 4.1 fusion 三段（mean）
+
+| caption_len | enc_fusion | fusion_ln | fusion_attn | fusion_resid |
+|---:|---:|---:|---:|---:|
+| 4   | 40.973 | 1.741 | 33.127 | 3.409 |
+| 16  | 42.780 | 1.749 | 34.949 | 3.404 |
+| 32  | 47.002 | 1.739 | 38.320 | 3.400 |
+| 64  | 62.192 | 1.758 | 54.306 | 3.417 |
+| 128 | 86.882 | 1.760 | 78.987 | 3.428 |
+
+> 观察：增长几乎全部来自 `fusion_attn`（33.13→78.99），`fusion_ln` 和 `fusion_resid` 基本常数项。
+
+#### 4.2 BiMultiHeadAttention 内部细分（mean）
+
+| caption_len | attn_proj | attn_scores(QK^T) | attn_softmax | attn_ctx(probs×V) | attn_out |
+|---:|---:|---:|---:|---:|---:|
+| 4   | 17.080 | 1.926 | 1.249 | 5.943 | 2.613 |
+| 16  | 17.111 | 2.004 | 2.070 | 6.726 | 2.613 |
+| 32  | 17.072 | 2.566 | 3.063 | 8.462 | 2.603 |
+| 64  | 17.083 | 4.201 | 8.610 | 15.406 | 2.625 |
+| 128 | 17.145 | 7.464 | 18.208 | 24.223 | 2.626 |
+
+> 关键观察：
+> - `attn_proj`（线性投影）≈ **17ms**，**基本不随文本长度变化**（常数项）。
+> - `attn_out` ≈ **2.6ms**，基本不变（常数项）。
+> - 随 `caption_len` 增长最明显的是：
+>   - **attn_softmax：1.25 → 18.21（+16.96ms）**
+>   - **attn_ctx：5.94 → 24.22（+18.28ms）**
+>   - attn_scores：1.93 → 7.46（+5.54ms）
+>
+> 因此，长 caption 下的主要瓶颈是：**softmax + context bmm + QK^T**（均与 `ntxt` 强相关）。
+
+---
+
+### 5. 对 Stage5/Stage6 的启示
+
+#### Stage5（只量化文本塔）的现实预期
+- `text_enc` 始终约 **4ms**，且不随 `caption_len` 增长 → **文本塔不是端到端瓶颈**。
+- 仅量化文本塔的价值更偏向：
+  - **显存占用下降**
+  - **误差/精度敏感性验证（AP 基本不掉）**
+  - 端到端速度提升可能有限（取决于整体 pipeline 是否受文本塔影响）
+
+#### Stage6（面向部署的混合精度/量化友好优化）应优先聚焦
+- 真正随 `caption_len` 爆炸增长的部分在：`enc_fusion` 的 attention（尤其 `softmax` 与 `ctx bmm`）
+- 两类主线方向：
+  1. **降低 fusion 有效文本 token 数（token pruning / top-k tokens）**  
+     直接削减 `scores/softmax/ctx` 的规模（对长 caption 最有效）。
+  2. **对 fusion 的线性层做 INT8/QAT，softmax 保持 FP32**  
+     主要收益在 `attn_proj` 等常数项（≈17ms），更稳定、更像工业部署。
+
+---
+
+### 6. 复现命令
+
+```bash
+PYTHONPATH=. python tools/benchmark_infer.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --pretrain_model_path outputs/prune_enc4_dec3_q300_distilbert_np2_clip8_fp32/checkpoint_best_regular.pth \
+  --device cuda --num_workers 4 --num_queries 300 \
+  --warmup 50 --iters 200 --num_batches 8 \
+  --amp --forward_only \
+  --caption_len 128 \
+  --profile_split

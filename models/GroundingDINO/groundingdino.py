@@ -16,7 +16,7 @@
 # ------------------------------------------------------------------------
 import copy
 from typing import List
-
+import time  # [Stage5] 用于 tokenize 计时（CPU）
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -286,6 +286,11 @@ class GroundingDINO(nn.Module):
 
         self._reset_parameters()
 
+        # [Stage5] split profile / text device control
+        self.profile_split = False
+        self.text_device = None
+        self.last_profile = None
+
     def _reset_parameters(self):
         # init input_proj
         for proj in self.input_proj:
@@ -316,9 +321,30 @@ class GroundingDINO(nn.Module):
             captions = [t["caption"] for t in targets]
         # encoder texts
 
-        tokenized = self.tokenizer(captions, padding="longest", return_tensors="pt").to(
-            samples.device
-        )
+        # =======================
+        # [Stage5] profile switch
+        # =======================
+        do_profile = bool(kw.get("profile_split", False)) or getattr(self, "profile_split", False)
+        _profile = {} if do_profile else None
+
+        # text encoder device (allow cpu/cuda override)
+        # 默认跟 samples.device 一致
+        text_device = kw.get("text_device", None) or getattr(self, "text_device", None) or samples.device
+
+        # tokenized = self.tokenizer(captions, padding="longest", return_tensors="pt").to(
+        #     samples.device
+        # )
+        # =======================
+        # [Stage5] tokenize (CPU)
+        # =======================
+        if do_profile:
+            _t0 = time.perf_counter()
+
+        tokenized = self.tokenizer(captions, padding="longest", return_tensors="pt")  # keep on CPU
+
+        if do_profile:
+            _profile["T_tokenize_ms"] = (time.perf_counter() - _t0) * 1000.0
+            
         one_hot_token = tokenized
 
         (
@@ -349,11 +375,13 @@ class GroundingDINO(nn.Module):
         # bert_output = self.bert(**tokenized_for_encoder)  # bs, 195, 768
 
 
-        #DistilBERT 时强制走普通 token mask
+        # DistilBERT 时强制走普通 token mask
         use_3d_text_mask = self.sub_sentence_present and (not isinstance(self.bert, TextEncoderShell))
+
         if use_3d_text_mask:
             tokenized_for_encoder = {k: v for k, v in tokenized.items() if k != "attention_mask"}
-            tokenized_for_encoder["attention_mask"] = text_self_attention_masks  # 3D [bs,L,L]
+            # 3D [bs,L,L]
+            tokenized_for_encoder["attention_mask"] = text_self_attention_masks
             tokenized_for_encoder["position_ids"] = position_ids
         else:
             # DistilBERT/AutoModel 路径：只用标准 2D attention_mask [bs,L]
@@ -361,11 +389,48 @@ class GroundingDINO(nn.Module):
                 "input_ids": tokenized["input_ids"],
                 "attention_mask": tokenized["attention_mask"],
             }
-        bert_output = self.bert(**tokenized_for_encoder)
+
+        # =======================
+        # [Stage5] move to text_device
+        # =======================
+        for k, v in list(tokenized_for_encoder.items()):
+            if torch.is_tensor(v):
+                tokenized_for_encoder[k] = v.to(text_device)
+
+        # =======================
+        # [Stage5] text encoder timing
+        # =======================
+        if do_profile and samples.device.type == "cuda":
+            _e1s = torch.cuda.Event(enable_timing=True)
+            _e1e = torch.cuda.Event(enable_timing=True)
+            torch.cuda.synchronize()
+            _e1s.record()
+            bert_output = self.bert(**tokenized_for_encoder)
+            _e1e.record()
+            _e1e.synchronize()
+            _profile["T_text_encoder_ms"] = _e1s.elapsed_time(_e1e)
+        elif do_profile:
+            _t1 = time.perf_counter()
+            bert_output = self.bert(**tokenized_for_encoder)
+            _profile["T_text_encoder_ms"] = (time.perf_counter() - _t1) * 1000.0
+        else:
+            bert_output = self.bert(**tokenized_for_encoder)
 
 
-        encoded_text = self.feat_map(bert_output["last_hidden_state"])  # bs, 195, d_model
-        text_token_mask = tokenized.attention_mask.bool()  # bs, 195
+        # encoded_text = self.feat_map(bert_output["last_hidden_state"])  # bs, 195, d_model
+        # text_token_mask = tokenized.attention_mask.bool()  # bs, 195
+        last_hidden = bert_output["last_hidden_state"]
+        if last_hidden.device != samples.device:
+            last_hidden = last_hidden.to(samples.device)
+
+        encoded_text = self.feat_map(last_hidden)
+
+        # tokenized 在 CPU，这里显式搬到 samples.device
+        text_token_mask = tokenized["attention_mask"].bool().to(samples.device)
+
+        # position_ids / text_self_attention_masks 也要在 samples.device 给 transformer 用
+        position_ids = position_ids.to(samples.device)
+        text_self_attention_masks = text_self_attention_masks.to(samples.device)
         # text_token_mask: True for nomask, False for mask
         # text_self_attention_masks: True for nomask, False for mask
 
@@ -384,10 +449,36 @@ class GroundingDINO(nn.Module):
             "text_self_attention_masks": text_self_attention_masks,  # bs, 195,195
         }
 
-
+        # [Stage5 split] 透传 profile dict 给 transformer 做更细分计时（encoder/decoder）
+        if do_profile:
+            text_dict["__profile"] = _profile
+            
         if isinstance(samples, (list, torch.Tensor)):
             samples = nested_tensor_from_tensor_list(samples)
+        
+        # ==================================
+        # [Stage5] vision+decoder total timing
+        # ==================================
+        if do_profile and samples.device.type == "cuda":
+            _vd_s = torch.cuda.Event(enable_timing=True)
+            _vd_e = torch.cuda.Event(enable_timing=True)
+            _vd_s.record()
+
+        # =======================
+        # [Stage5] backbone timing
+        # =======================
+        if do_profile and samples.device.type == "cuda":
+            _bb_s = torch.cuda.Event(enable_timing=True)
+            _bb_e = torch.cuda.Event(enable_timing=True)
+            _bb_s.record()
+
         features, poss = self.backbone(samples)
+
+        if do_profile and samples.device.type == "cuda":
+            _bb_e.record()
+            _bb_e.synchronize()
+            _profile["T_backbone_ms"] = _bb_s.elapsed_time(_bb_e)
+
         srcs = []
         masks = []
         for l, feat in enumerate(features):
@@ -409,11 +500,21 @@ class GroundingDINO(nn.Module):
                 masks.append(mask)
                 poss.append(pos_l)
 
+        # ==========================
+        # [Stage5] transformer timing
+        # ==========================
+        if do_profile and samples.device.type == "cuda":
+            _tr_s = torch.cuda.Event(enable_timing=True)
+            _tr_e = torch.cuda.Event(enable_timing=True)
+            _tr_s.record()
         input_query_bbox = input_query_label = attn_mask = dn_meta = None
         hs, reference, hs_enc, ref_enc, init_box_proposal = self.transformer(
             srcs, masks, input_query_bbox, poss, input_query_label, attn_mask, text_dict
         )
-
+        if do_profile and samples.device.type == "cuda":
+            _tr_e.record()
+            _tr_e.synchronize()
+            _profile["T_transformer_ms"] = _tr_s.elapsed_time(_tr_e)
         
         # deformable-detr-like anchor update
         outputs_coord_list = []
@@ -426,6 +527,13 @@ class GroundingDINO(nn.Module):
             outputs_coord_list.append(layer_outputs_unsig)
         outputs_coord_list = torch.stack(outputs_coord_list)
 
+        # =====================
+        # [Stage5] heads timing
+        # =====================
+        if do_profile and samples.device.type == "cuda":
+            _hd_s = torch.cuda.Event(enable_timing=True)
+            _hd_e = torch.cuda.Event(enable_timing=True)
+            _hd_s.record()
 
         outputs_class = torch.stack(
             [
@@ -433,6 +541,11 @@ class GroundingDINO(nn.Module):
                 for layer_cls_embed, layer_hs in zip(self.class_embed, hs)
             ]
         )
+
+        if do_profile and samples.device.type == "cuda":
+            _hd_e.record()
+            _hd_e.synchronize()
+            _profile["T_heads_ms"] = _hd_s.elapsed_time(_hd_e)
 
         out = {"pred_logits": outputs_class[-1], "pred_boxes": outputs_coord_list[-1]}
 
@@ -486,6 +599,18 @@ class GroundingDINO(nn.Module):
 
         # outputs['one_hot'].shape
         # torch.Size([4, 900, 256])
+
+
+        # =======================
+        # [Stage5] vision+decoder timing END
+        # =======================
+        if do_profile and samples.device.type == "cuda":
+            _vd_e.record()
+            _vd_e.synchronize()
+            _profile["T_vision_decoder_ms"] = _vd_s.elapsed_time(_vd_e)
+
+        if do_profile:
+            self.last_profile = _profile
 
         return out
 

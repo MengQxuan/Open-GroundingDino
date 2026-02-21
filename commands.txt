@@ -375,3 +375,15 @@ torchrun --nproc_per_node=2 --master_port=29501 main.py \
   --num_workers 8 \
   --amp \
   --save_log
+
+
+Stage5-0：把 profile_split 体系补齐（tokenize / text / vision+decoder / total）
+PYTHONPATH=. python tools/benchmark_infer.py \
+  --config_file config/cfg_coco.py \
+  --datasets config/datasets_coco_10k1k.json \
+  --pretrain_model_path outputs/prune_enc4_dec3_q300_distilbert_np2_clip8_fp32/checkpoint_best_regular.pth \
+  --device cuda --num_workers 4 --num_queries 300 \
+  --warmup 50 --iters 200 --num_batches 8 \
+  --amp --forward_only \
+  --caption_len 128 \
+  --profile_split

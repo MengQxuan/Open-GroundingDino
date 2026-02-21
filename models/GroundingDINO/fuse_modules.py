@@ -155,9 +155,17 @@ class BiMultiHeadAttention(nn.Module):
         Returns:
             _type_: _description_
         """
+
+        _prof = getattr(self, "_profile", None)
+        _do_prof = (_prof is not None) and (v.device.type == "cuda")
+
         # if os.environ.get('IPDB_SHILONG_DEBUG', None) == 'INFO':
         #     import ipdb; ipdb.set_trace()
         bsz, tgt_len, _ = v.size()
+
+        if _do_prof:
+            _ps = torch.cuda.Event(True); _pe = torch.cuda.Event(True)
+            _ps.record()
 
         query_states = self.v_proj(v) * self.scale
         key_states = self._shape(self.l_proj(l), -1, bsz)
@@ -170,13 +178,24 @@ class BiMultiHeadAttention(nn.Module):
         value_v_states = value_v_states.view(*proj_shape)
         value_l_states = value_l_states.view(*proj_shape)
 
+        if _do_prof:
+            _pe.record(); _pe.synchronize()
+            _prof["T_enc_fusion_proj_ms"] = _prof.get("T_enc_fusion_proj_ms", 0.0) + float(_ps.elapsed_time(_pe))
+
         src_len = key_states.size(1)
+        if _do_prof:
+            _ss = torch.cuda.Event(True); _se = torch.cuda.Event(True)
+            _ss.record()
         attn_weights = torch.bmm(query_states, key_states.transpose(1, 2))  # bs*nhead, nimg, ntxt
 
         if attn_weights.size() != (bsz * self.num_heads, tgt_len, src_len):
             raise ValueError(
                 f"Attention weights should be of size {(bsz * self.num_heads, tgt_len, src_len)}, but is {attn_weights.size()}"
             )
+        
+        if _do_prof:
+            _se.record(); _se.synchronize()
+            _prof["T_enc_fusion_scores_ms"] = _prof.get("T_enc_fusion_scores_ms", 0.0) + float(_ss.elapsed_time(_se))
 
         if self.stable_softmax_2d:
             attn_weights = attn_weights - attn_weights.max()
@@ -189,6 +208,10 @@ class BiMultiHeadAttention(nn.Module):
             attn_weights = torch.clamp(
                 attn_weights, max=50000
             )  # Do not increase 50000, data type half has quite limited range
+
+            if _do_prof:
+                _xs = torch.cuda.Event(True); _xe = torch.cuda.Event(True)
+                _xs.record()
 
         attn_weights_T = attn_weights.transpose(1, 2)
         attn_weights_l = attn_weights_T - torch.max(attn_weights_T, dim=-1, keepdim=True)[0]
@@ -218,8 +241,16 @@ class BiMultiHeadAttention(nn.Module):
             attn_weights.masked_fill_(attention_mask_l, float("-inf"))
         attn_weights_v = attn_weights.softmax(dim=-1)
 
+        if _do_prof:
+            _xe.record(); _xe.synchronize()
+            _prof["T_enc_fusion_softmax_ms"] = _prof.get("T_enc_fusion_softmax_ms", 0.0) + float(_xs.elapsed_time(_xe))
+
         attn_probs_v = F.dropout(attn_weights_v, p=self.dropout, training=self.training)
         attn_probs_l = F.dropout(attn_weights_l, p=self.dropout, training=self.training)
+
+        if _do_prof:
+            _cs = torch.cuda.Event(True); _ce = torch.cuda.Event(True)
+            _cs.record()
 
         attn_output_v = torch.bmm(attn_probs_v, value_l_states)
         attn_output_l = torch.bmm(attn_probs_l, value_v_states)
@@ -234,6 +265,10 @@ class BiMultiHeadAttention(nn.Module):
                 f"`attn_output_l` should be of size {(bsz, self.num_heads, src_len, self.head_dim)}, but is {attn_output_l.size()}"
             )
 
+        if _do_prof:
+            _ce.record(); _ce.synchronize()
+            _prof["T_enc_fusion_ctx_ms"] = _prof.get("T_enc_fusion_ctx_ms", 0.0) + float(_cs.elapsed_time(_ce))
+        
         attn_output_v = attn_output_v.view(bsz, self.num_heads, tgt_len, self.head_dim)
         attn_output_v = attn_output_v.transpose(1, 2)
         attn_output_v = attn_output_v.reshape(bsz, tgt_len, self.embed_dim)
@@ -242,8 +277,16 @@ class BiMultiHeadAttention(nn.Module):
         attn_output_l = attn_output_l.transpose(1, 2)
         attn_output_l = attn_output_l.reshape(bsz, src_len, self.embed_dim)
 
+        if _do_prof:
+            _os = torch.cuda.Event(True); _oe = torch.cuda.Event(True)
+            _os.record()
+
         attn_output_v = self.out_v_proj(attn_output_v)
         attn_output_l = self.out_l_proj(attn_output_l)
+
+        if _do_prof:
+            _oe.record(); _oe.synchronize()
+            _prof["T_enc_fusion_out_ms"] = _prof.get("T_enc_fusion_out_ms", 0.0) + float(_os.elapsed_time(_oe))
 
         return attn_output_v, attn_output_l
 
@@ -283,15 +326,73 @@ class BiAttentionBlock(nn.Module):
         self.gamma_v = nn.Parameter(init_values * torch.ones((v_dim)), requires_grad=True)
         self.gamma_l = nn.Parameter(init_values * torch.ones((l_dim)), requires_grad=True)
 
+    # def forward(self, v, l, attention_mask_v=None, attention_mask_l=None):
+    #     v = self.layer_norm_v(v)
+    #     l = self.layer_norm_l(l)
+    #     delta_v, delta_l = self.attn(
+    #         v, l, attention_mask_v=attention_mask_v, attention_mask_l=attention_mask_l
+    #     )
+    #     # v, l = v + delta_v, l + delta_l
+    #     v = v + self.drop_path(self.gamma_v * delta_v)
+    #     l = l + self.drop_path(self.gamma_l * delta_l)
+    #     return v, l
     def forward(self, v, l, attention_mask_v=None, attention_mask_l=None):
+        # ==========================
+        # [Stage6-0] fine-grained fusion profiling (accumulate into encoder profile)
+        # ==========================
+        _prof = getattr(self, "_profile", None)
+        _do_prof = (_prof is not None) and (hasattr(v, "device")) and (v.device.type == "cuda")
+
+        # ---- LN timing ----
+        if _do_prof:
+            _ln_s = torch.cuda.Event(enable_timing=True)
+            _ln_e = torch.cuda.Event(enable_timing=True)
+            _ln_s.record()
+
         v = self.layer_norm_v(v)
         l = self.layer_norm_l(l)
+
+        if _do_prof:
+            _ln_e.record()
+            _ln_e.synchronize()
+            _dt = _ln_s.elapsed_time(_ln_e)
+            _prof["T_enc_fusion_ln_ms"] = _prof.get("T_enc_fusion_ln_ms", 0.0) + float(_dt)
+
+        # ---- ATTENTION timing (BiMultiHeadAttention) ----
+        if _do_prof:
+            # pass profile into inner attention module too
+            self.attn._profile = _prof
+
+            _attn_s = torch.cuda.Event(enable_timing=True)
+            _attn_e = torch.cuda.Event(enable_timing=True)
+            _attn_s.record()
+
         delta_v, delta_l = self.attn(
             v, l, attention_mask_v=attention_mask_v, attention_mask_l=attention_mask_l
         )
-        # v, l = v + delta_v, l + delta_l
+
+        if _do_prof:
+            _attn_e.record()
+            _attn_e.synchronize()
+            _dt = _attn_s.elapsed_time(_attn_e)
+            _prof["T_enc_fusion_attn_ms"] = _prof.get("T_enc_fusion_attn_ms", 0.0) + float(_dt)
+            self.attn._profile = None
+
+        # ---- RESID timing ----
+        if _do_prof:
+            _rs = torch.cuda.Event(enable_timing=True)
+            _re = torch.cuda.Event(enable_timing=True)
+            _rs.record()
+
         v = v + self.drop_path(self.gamma_v * delta_v)
         l = l + self.drop_path(self.gamma_l * delta_l)
+
+        if _do_prof:
+            _re.record()
+            _re.synchronize()
+            _dt = _rs.elapsed_time(_re)
+            _prof["T_enc_fusion_resid_ms"] = _prof.get("T_enc_fusion_resid_ms", 0.0) + float(_dt)
+
         return v, l
 
     # def forward(self, v:List[torch.Tensor], l, attention_mask_v=None, attention_mask_l=None)

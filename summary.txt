@@ -280,3 +280,252 @@ caption_len: 128 (token='a')
 latency ms (mean/p50/p90): 225.45 / 230.65 / 257.05
 FPS (mean/p50): 17.74 / 17.34
 ===========================================
+
+
+
+Stage5-0：把 profile_split 体系补齐（tokenize / text / vision+decoder / total）
+Stage5 的“只量化文本塔来显著降总延迟”在你当前实现里基本做不到——因为瓶颈根本不在 text encoder，
+而在 vision+decoder（准确说是 transformer 里和文本 token 交互的 cross-attn / text fusion）。
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a.'
+caption_len: 4 (token='a')
+latency ms (mean/p50/p90): 160.14 / 165.65 / 181.75
+FPS (mean/p50): 24.98 / 24.15
+---- split(ms) mean/p50 ----
+tokenize : 0.363 / 0.343
+text_enc : 4.198 / 3.919
+vision+dec: 154.100 / 159.977
+===========================================
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a a a a a a a a a a a a a.'
+caption_len: 16 (token='a')
+latency ms (mean/p50/p90): 164.42 / 168.98 / 187.48
+FPS (mean/p50): 24.33 / 23.67
+---- split(ms) mean/p50 ----
+tokenize : 0.449 / 0.426
+text_enc : 4.185 / 3.854
+vision+dec: 158.316 / 163.419
+===========================================
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a.'
+caption_len: 32 (token='a')
+latency ms (mean/p50/p90): 169.34 / 176.35 / 193.27
+FPS (mean/p50): 23.62 / 22.68
+---- split(ms) mean/p50 ----
+tokenize : 0.592 / 0.557
+text_enc : 4.200 / 3.929
+vision+dec: 163.062 / 169.066
+===========================================
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a.'
+caption_len: 64 (token='a')
+latency ms (mean/p50/p90): 190.11 / 195.08 / 218.51
+FPS (mean/p50): 21.04 / 20.50
+---- split(ms) mean/p50 ----
+tokenize : 0.883 / 0.851
+text_enc : 4.173 / 3.929
+vision+dec: 183.532 / 187.714
+===========================================
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a.'
+caption_len: 128 (token='a')
+latency ms (mean/p50/p90): 222.42 / 228.06 / 253.31
+FPS (mean/p50): 17.98 / 17.54
+---- split(ms) mean/p50 ----
+tokenize : 1.402 / 1.354
+text_enc : 4.326 / 3.986
+vision+dec: 215.048 / 221.113
+===========================================
+
+
+“长 caption 慢”不在文本塔，而在 encoder 的融合/注意力计算
+caption_len 变长带来的额外计算几乎全部来自 Encoder 的 feature_fusion_layer（enc_fusion），
+占 encoder 增量的 ~98%（46.92 / 47.84）；MSDeformAttn 自身几乎不随 text_len 变化。
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a.'
+caption_len: 4 (token='a')
+latency ms (mean/p50/p90): 171.72 / 173.74 / 194.72
+FPS (mean/p50): 23.29 / 23.02
+---- split(ms) mean/p50 ----
+tokenize : 0.355 / 0.346
+text_enc : 4.109 / 3.943
+vision+dec: 165.781 / 168.159
+backbone : 42.955 / 43.258
+transfmr : 118.583 / 120.998
+  enc   : 97.024 / 99.102
+  dec   : 15.331 / 15.030
+    enc_fusion : 40.973 / 42.096
+    enc_text   : 4.762 / 4.134
+    enc_msdef  : 49.801 / 51.243
+      fusion_ln : 1.741 / 1.807
+      fusion_attn: 33.127 / 34.110
+      fusion_resid: 3.409 / 3.465
+      attn_proj : 17.080 / 17.306
+      attn_scores: 1.926 / 1.995
+      attn_softmax: 1.249 / 1.090
+      attn_ctx  : 5.943 / 6.018
+      attn_out  : 2.613 / 2.764
+heads    : 0.530 / 0.505
+===========================================
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a a a a a a a a a a a a a.'
+caption_len: 16 (token='a')
+latency ms (mean/p50/p90): 176.42 / 181.33 / 200.06
+FPS (mean/p50): 22.67 / 22.06
+---- split(ms) mean/p50 ----
+tokenize : 0.486 / 0.471
+text_enc : 4.206 / 3.944
+vision+dec: 170.224 / 172.756
+backbone : 42.994 / 42.982
+transfmr : 121.493 / 123.687
+  enc   : 99.145 / 101.447
+  dec   : 16.021 / 15.507
+    enc_fusion : 42.780 / 43.772
+    enc_text   : 4.856 / 4.217
+    enc_msdef  : 49.913 / 51.269
+      fusion_ln : 1.749 / 1.809
+      fusion_attn: 34.949 / 36.070
+      fusion_resid: 3.404 / 3.500
+      attn_proj : 17.111 / 17.386
+      attn_scores: 2.004 / 2.079
+      attn_softmax: 2.070 / 2.045
+      attn_ctx  : 6.726 / 6.823
+      attn_out  : 2.613 / 2.783
+heads    : 0.574 / 0.525
+===========================================
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a.'
+caption_len: 32 (token='a')
+latency ms (mean/p50/p90): 182.96 / 186.81 / 207.32
+FPS (mean/p50): 21.86 / 21.41
+---- split(ms) mean/p50 ----
+tokenize : 0.565 / 0.554
+text_enc : 4.115 / 3.943
+vision+dec: 176.824 / 180.968
+backbone : 43.755 / 44.965
+transfmr : 125.485 / 128.843
+  enc   : 103.935 / 107.030
+  dec   : 15.388 / 15.385
+    enc_fusion : 47.002 / 48.174
+    enc_text   : 4.609 / 4.286
+    enc_msdef  : 50.837 / 53.116
+      fusion_ln : 1.739 / 1.802
+      fusion_attn: 38.320 / 39.026
+      fusion_resid: 3.400 / 3.458
+      attn_proj : 17.072 / 17.269
+      attn_scores: 2.566 / 2.596
+      attn_softmax: 3.063 / 3.186
+      attn_ctx  : 8.462 / 8.552
+      attn_out  : 2.603 / 2.677
+heads    : 0.560 / 0.531
+===========================================
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a.'
+caption_len: 64 (token='a')
+latency ms (mean/p50/p90): 201.24 / 203.78 / 229.63
+FPS (mean/p50): 19.88 / 19.63
+---- split(ms) mean/p50 ----
+tokenize : 0.873 / 0.870
+text_enc : 4.201 / 4.095
+vision+dec: 194.624 / 197.430
+backbone : 42.925 / 42.663
+transfmr : 140.578 / 143.649
+  enc   : 118.783 / 121.836
+  dec   : 15.508 / 15.393
+    enc_fusion : 62.192 / 63.827
+    enc_text   : 4.875 / 4.329
+    enc_msdef  : 50.175 / 52.278
+      fusion_ln : 1.758 / 1.806
+      fusion_attn: 54.306 / 55.304
+      fusion_resid: 3.417 / 3.480
+      attn_proj : 17.083 / 17.287
+      attn_scores: 4.201 / 4.266
+      attn_softmax: 8.610 / 8.963
+      attn_ctx  : 15.406 / 15.483
+      attn_out  : 2.625 / 2.785
+heads    : 0.557 / 0.523
+===========================================
+
+================ BENCHMARK ================
+mode: forward_only
+device: cuda
+amp: True
+num_queries: 300
+batch_size: 4, warmup: 50, iters: 200, num_batches: 8
+caption: 'a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a.'
+caption_len: 128 (token='a')
+latency ms (mean/p50/p90): 235.25 / 238.64 / 266.90
+FPS (mean/p50): 17.00 / 16.76
+---- split(ms) mean/p50 ----
+tokenize : 1.349 / 1.331
+text_enc : 4.170 / 4.067
+vision+dec: 228.067 / 231.669
+backbone : 43.054 / 43.561
+transfmr : 165.977 / 169.051
+  enc   : 143.607 / 147.094
+  dec   : 15.875 / 15.684
+    enc_fusion : 86.882 / 88.846
+    enc_text   : 5.075 / 4.449
+    enc_msdef  : 50.100 / 52.277
+      fusion_ln : 1.760 / 1.814
+      fusion_attn: 78.987 / 80.212
+      fusion_resid: 3.428 / 3.525
+      attn_proj : 17.145 / 17.350
+      attn_scores: 7.464 / 7.536
+      attn_softmax: 18.208 / 18.375
+      attn_ctx  : 24.223 / 24.375
+      attn_out  : 2.626 / 2.729
+heads    : 0.554 / 0.544
+===========================================
