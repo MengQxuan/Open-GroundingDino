@@ -8,7 +8,7 @@
 - 推理效率瓶颈分析
 - Transformer 层剪枝与跨模态推理加速
 - 文本编码器替换（DistilBERT）
-> 详细的核心原理、模型架构与技术说明，请参阅 [docs/PRINCIPLES.md](docs/PRINCIPLES.md)。
+> 详细的核心原理、模型架构与技术说明，请参阅 [principles.md](principles.md)。
 ---
 ## 目录
 - [实验环境](#实验环境)

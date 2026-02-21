@@ -1,110 +1,5 @@
-5K0.5K
-
-Averaged stats: 
-Accumulating evaluation results... 
-DONE (t=1.43s). 
-IoU metric: bbox 
-Average Precision (AP) @[ IoU=0.50:0.95 | area= all | maxDets=100 ] = 0.546 
-Average Precision (AP) @[ IoU=0.50 | area= all | maxDets=100 ] = 0.688 
-Average Precision (AP) @[ IoU=0.75 | area= all | maxDets=100 ] = 0.602 
-Average Precision (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.394 
-Average Precision (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.585 
-Average Precision (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.717 
-Average Recall (AR) @[ IoU=0.50:0.95 | area= all | maxDets= 1 ] = 0.412 
-Average Recall (AR) @[ IoU=0.50:0.95 | area= all | maxDets= 10 ] = 0.702 
-Average Recall (AR) @[ IoU=0.50:0.95 | area= all | maxDets=100 ] = 0.767 
-Average Recall (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.591 
-Average Recall (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.791 
-Average Recall (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.909
-
-Averaged stats: 
-Accumulating evaluation results...
-DONE (t=1.48s).
-IoU metric: bbox
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.547
- Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.695
- Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.597
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.390
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.589
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.707
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.406
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.699
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.769
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.592
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.800
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.906
-
- Averaged stats: 
-Accumulating evaluation results...
-DONE (t=1.49s).
-IoU metric: bbox
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.542
- Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.690
- Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.593
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.389
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.583
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.698
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.401
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.693
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.764
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.587
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.794
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.911
-Training time 1:28:34
-
-
-
-
-10k1k_baseline
-
-Averaged stats: 
-Accumulating evaluation results...
-DONE (t=2.33s).
-IoU metric: bbox
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.550
- Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.704
- Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.604
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.397
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.590
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.695
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.411
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.696
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.768
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.613
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.788
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.901
-Training time 3:07:14
-
-
-
-冻结BERT
-Averaged stats: 
-Accumulating evaluation results...
-DONE (t=2.28s).
-IoU metric: bbox
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.454
- Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.592
- Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.499
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.320
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.479
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.582
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.378
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.645
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.728
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.552
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.744
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.877
-Training time 2:53:43
-
-
-
-Auto DL
-
 10k1k_q900
 max_mem = 12154
-Averaged stats: 
-Accumulating evaluation results...
-DONE (t=3.84s).
 IoU metric: bbox
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.552
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.703
@@ -118,13 +13,9 @@ IoU metric: bbox
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.626
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.810
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.912
-Training time 1:52:57
 
 
 10k1k_q600
-Averaged stats: 
-Accumulating evaluation results...
-DONE (t=3.83s).
 IoU metric: bbox
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.559
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.713
@@ -138,14 +29,10 @@ IoU metric: bbox
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.622
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.804
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.913
-Training time 2:01:19
 
 
 10k1k_q300
 max_mem = 11560
-Averaged stats: 
-Accumulating evaluation results...
-DONE (t=4.20s).
 IoU metric: bbox
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.556
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.710
@@ -159,13 +46,9 @@ IoU metric: bbox
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.609
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.806
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.912
-Training time 1:59:43
 
 
 10k1k_q300 seed = 42
-Averaged stats: 
-Accumulating evaluation results...
-DONE (t=3.55s).
 IoU metric: bbox
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.558
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.716
@@ -179,13 +62,9 @@ IoU metric: bbox
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.619
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.800
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.914
-Training time 1:57:53
 
 
 10k1k_q200
-Averaged stats: 
-Accumulating evaluation results...
-DONE (t=4.22s).
 IoU metric: bbox
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.551
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.710
@@ -199,13 +78,9 @@ IoU metric: bbox
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.586
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.784
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.902
-Training time 1:57:31
 
 
 10k1k_q50
-Averaged stats: 
-Accumulating evaluation results...
-DONE (t=4.49s).
 IoU metric: bbox
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.537
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.699
@@ -219,13 +94,10 @@ IoU metric: bbox
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.497
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.731
  Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.859
-Training time 1:53:19
 
 
 
 冻结BERT
-Accumulating evaluation results... 
-DONE (t=4.24s). 
 IoU metric: bbox 
 Average Precision (AP) @[ IoU=0.50:0.95 | area= all | maxDets=100 ] = 0.490 
 Average Precision (AP) @[ IoU=0.50 | area= all | maxDets=100 ] = 0.632 
@@ -243,9 +115,6 @@ Average Recall (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.907
 
 
 10k1k_q300_prune200
-Averaged stats: 
-Accumulating evaluation results...
-DONE (t=4.04s).
 IoU metric: bbox
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.541
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.701
@@ -264,9 +133,6 @@ Training time 1:50:31
 
 
 10k1k_q300_prune50
-Averaged stats: 
-Accumulating evaluation results...
-DONE (t=4.17s).
 IoU metric: bbox
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.545
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.702
