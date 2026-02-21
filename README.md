@@ -1,8 +1,6 @@
-# Open-GroundingDINO 复现与轻量化优化实验
+# 基于 GroundingDINO 的开放词汇目标检测模型结构压缩与推理加速研究
 
-> 本项目基于开源仓库 **Open-GroundingDINO**，完整复现了 GroundingDINO 的训练与评估流程，并围绕 **Object Queries 冗余性与结构轻量化** 展开了系统性消融实验研究。
->
-> 核心原理与模型架构详见 [principles.md](./principles.md)。
+本项目基于开源仓库 **Open-GroundingDINO**，完整复现了 GroundingDINO 的训练与评估流程，并围绕 **Object Queries 冗余性与结构轻量化** 展开了系统性消融实验研究。
 
 ## 目录
 
@@ -131,7 +129,7 @@ python tools/coco2odvg.py \
 | ----- | ------ |
 | Train | 10,000 |
 | Val   | 1,000  |
-| Epoch | 5      |
+| Epoch | 5~20      |
 | GPU   | 2×4090 |
 
 ---
@@ -227,7 +225,7 @@ torchrun --nproc_per_node=2 --master_port=29501 main.py \
   --num_workers 8 --amp --save_log
 ```
 
-### Stage4：全量轻量化配置（剪枝 + np2 + offset_clip + softmax_fp32 + DistilBERT）
+### 全量轻量化配置（剪枝 + np2 + offset_clip + softmax_fp32 + DistilBERT）
 
 ```bash
 torchrun --nproc_per_node=2 --master_port=29501 main.py \
@@ -415,11 +413,11 @@ Max GPU 显存：12,154 MB
 
 | Queries | AP          | AP50        | AP75        | Max Mem (MB) |
 | ------- | ----------- | ----------- | ----------- | ------------ |
-| 900     | 0.552       | 0.703       | 0.605       | 12,154       |
-| 600     | **0.559**   | **0.713**   | **0.615**   | —            |
-| 300     | 0.556–0.558 | 0.710–0.716 | 0.612–0.617 | 11,560       |
-| 200     | 0.551       | 0.710       | 0.606       | —            |
-| 50      | 0.537       | 0.699       | 0.582       | —            |
+| 900     | 0.552       | 0.703       | 0.605       | 12154       |
+| 600     | **0.559**   | **0.713**   | **0.615**   | 11090        |
+| 300     | 0.556–0.558 | 0.710–0.716 | 0.612–0.617 | 11560       |
+| 200     | 0.551       | 0.710       | 0.606       | 11399        |
+| 50      | 0.537       | 0.699       | 0.582       | 11265        |
 
 #### 稳定性验证（Seed=42，q=300）
 
@@ -650,7 +648,3 @@ Max GPU 显存：12,154 MB
 | Stage4（全量轻量化 + DistilBERT） | 0.512 | 9,764        | 显存 < 10 GB     |
 
 ---
-
-*更多技术细节、模型架构原理及关键模块说明，请参见 [principles.md](./principles.md)。*
-ENDOFFILE
-<command with shellId: 0 is still running after 10 seconds. The command is still running but hasn't produced output yet. It may be waiting for input or still processing. Use read_bash to continue waiting, write_bash if you think it needs input, or stop_bash to stop it.>

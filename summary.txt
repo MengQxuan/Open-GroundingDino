@@ -16,7 +16,7 @@ IoU metric: bbox
 
 Baseline: 10k1k_q300 + BERT
 max_mem = 11560
-Epoch: [10] Total time: 0:22:39
+Epoch: [10] Total time: 0:21:44
 IoU metric: bbox
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.556
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.710
