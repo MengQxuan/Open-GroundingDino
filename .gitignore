@@ -29,6 +29,7 @@ weights/
 data/
 logs/
 outputs/
+quantitative_models/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
