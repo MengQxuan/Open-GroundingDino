@@ -228,7 +228,7 @@ torchrun --nproc_per_node=2 --master_port=29501 main.py \
   --num_workers 8 --amp --save_log
 ```
 
-### 全量轻量化配置（剪枝 + np2 + offset_clip + softmax_fp32 + DistilBERT）
+### 结构轻量化配置（剪枝 + np2 + offset_clip + softmax_fp32 + DistilBERT）
 
 ```bash
 torchrun --nproc_per_node=2 --master_port=29501 main.py \
@@ -742,7 +742,7 @@ Stage5 量化模型
 | Baseline（q=900, BERT） | 0.552 | 0:21:14 | 12,154 | ~694 MB | 标准基准 |
 | q=300（最优 queries） | 0.558 | 0:21:44 | 11,560 | 659.3MB | 精度最高 |
 | Stage1（层剪枝） | 0.533 | 0:15:59 | 10,742 | — | 提速 26%，精度 -2% |
-| Stage4（全量轻量化） | 0.512 | 0:15:03 | 9,764 | 445.6 MB | 提速 31%，显存 <10GB |
+| Stage4（结构轻量化） | 0.512 | 0:15:03 | 9,764 | 445.6 MB | 提速 31%，显存 <10GB |
 | Stage5（+ INT8 量化） | 0.514 | — | — | 195.1 MB | 体积 -56.2%，精度无损 |
 
 ---
