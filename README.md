@@ -718,7 +718,7 @@ Max GPU 显存：12,154 MB
 
 **关键发现：**
 
-> * `text_enc`（约 4ms）、`backbone`（约 43ms）、`enc_msdef`（约 50ms）���本不随 caption 长度变化。
+> * `text_enc`（约 4ms）、`backbone`（约 43ms）、`enc_msdef`（约 50ms）基本不随 caption 长度变化。
 > * **`enc_fusion`（BiAttentionBlock）从 40.97ms 增长至 86.88ms，是主要瓶颈**，占 encoder 增量的约 98%。
 > * 在 `enc_fusion` 内部，增长几乎全部来自 `attn_softmax`（+16.96ms）和 `attn_ctx`（+18.28ms）——均与文本 token 数 `ntxt` 成二次方关系。
 > * `attn_proj`（线性投影，约 17ms）和 `attn_out`（约 2.6ms）基本为常数项。
