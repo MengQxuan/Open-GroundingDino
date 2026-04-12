@@ -1,10 +1,23 @@
 # 基于 GroundingDINO 的开放词汇目标检测模型结构压缩与推理加速研究
 
-本项目基于开源仓库 **Open-GroundingDINO**[https://github.com/longzw1997/Open-GroundingDino]，完整复现了 GroundingDINO[https://github.com/IDEA-Research/GroundingDINO] 的训练与评估流程，并围绕 **Object Queries 冗余性与结构轻量化** 展开了系统性消融实验研究。
+本仓库基于 [Open-GroundingDINO](https://github.com/longzw1997/Open-GroundingDino) 展开实验，围绕 [GroundingDINO](https://github.com/IDEA-Research/GroundingDINO) 的训练、评估、推理与部署流程进行了完整复现，并在此基础上做了系统性的轻量化消融、性能 profiling 与瓶颈定位分析。
+
+仓库当前阶段的核心定位是：
+
+- 完整复现开放词汇目标检测训练与评估 pipeline
+- 验证 `num_queries`、结构剪枝、文本编码器替换、动态量化等轻量化方向的效果
+- 通过 profiling 明确端到端性能瓶颈所在
+
+当前尚未完成的部分是：
+
+- 针对已定位的瓶颈模块 `enc_fusion`（BiAttentionBlock）进行专门的结构级或算子级优化
+
+因此，本仓库更准确的描述是“**复现 + 轻量化探索 + 性能瓶颈定位**”，而不是“已经完成瓶颈导向加速优化”的最终方案。
 
 ## 目录
 
 - [项目简介](#项目简介)
+- [项目状态](#项目状态)
 - [实验环境](#实验环境)
 - [快速开始](#快速开始)
   - [环境安装](#环境安装)
@@ -29,25 +42,46 @@
 
 ## 项目简介
 
-本项目基于开源仓库 **Open-GroundingDINO**，系统完成了从环境配置、数据集转换、分布式训练到推理测速的完整复现流程，并围绕 **Object Queries 冗余性与效率问题** 展开了系统性实验研究。
+本项目关注的是一个更偏研究和工程验证的问题：**GroundingDINO 的计算开销究竟来自哪里，以及现有轻量化手段是否真正命中主要瓶颈。**
 
-**主要研究方向：**
+围绕这个问题，仓库目前已经完成以下工作：
 
-* `num_queries` 对精度与速度的影响
-* Query Pruning 的可行性验证
-* BERT 冻结策略对性能的影响
-* Transformer 层剪枝与跨模态推理加速
-* DistilBERT 替换文本编码器
-* Caption 长度对推理延迟的影响分析
-* PyTorch 动态 INT8 量化部署优化
+- GroundingDINO 在 COCO/ODVG 数据格式上的训练、评估、推理和测速 pipeline 复现
+- `num_queries` 冗余性分析与 Query Pruning 可行性验证
+- BERT 冻结策略、Transformer 层剪枝、`dec_n_points` 降采样、DistilBERT 替换等结构轻量化实验
+- PyTorch 动态 INT8 量化与 CPU 推理评测
+- Caption 长度 profiling 与 encoder 内部细分 profiling
 
-**项目目标：**
+当前仓库希望回答的核心问题包括：
 
-* 完整复现 GroundingDINO 训练与评估流程
-* 跑通 ODVG 数据格式的完整 pipeline
-* 构建稳定 baseline，分析 queries 冗余问题
-* 探索模型轻量化潜力
-* 实现模型量化压缩，验证部署可行性
+- `Object Queries` 是否存在明显冗余
+- 简单剪枝和结构轻量化是否能带来真实加速
+- 端到端推理瓶颈究竟位于 query 数量、文本塔，还是跨模态融合模块
+
+从现阶段结果看，仓库已经完成了**瓶颈定位**，但还没有完成**针对瓶颈模块的定向优化**。
+
+## 项目状态
+
+### 已完成
+
+- Baseline 复现与稳定性验证
+- `num_queries`、BERT 冻结、Query Pruning 消融
+- `enc4/dec3` 层剪枝、`dec_n_points=2`、`offset_clip + softmax_fp32`
+- DistilBERT 替换文本编码器
+- 动态 INT8 量化、体积压缩与 CPU 推理评测
+- Caption profiling 与 encoder split profiling
+
+### 当前结论
+
+- `queries` 存在冗余，但减少 queries 并不能显著改善端到端推理速度
+- 性能瓶颈位于 encoder 内部的 `enc_fusion`（`BiAttentionBlock`）而不是文本编码器
+- 动态 INT8 量化对模型压缩有效，但并没有从根本上解决端到端性能瓶颈
+
+### 尚未完成
+
+- 针对 `enc_fusion` 的结构级优化
+- 针对瓶颈模块的量化/算子级优化
+- 面向长 caption 场景的瓶颈导向加速方案
 
 ---
 
@@ -621,7 +655,9 @@ Max GPU 显存：12,154 MB
 | Stage3 | Offset + FP32 稳定化        | ~0.511 | —        | ✅       |
 | Stage4 | DistilBERT 替换             | ~0.512 | 445.6 MB | ✅       |
 | Stage5 | PyTorch 动态 INT8 量化 | ~0.514 | 195.1 MB | ✅ |
-| Stage6 | Vision QAT（Decoder）       | —      | —        | ⏳ 规划中 |
+| Stage6 | Bottleneck-Oriented Optimization（enc_fusion） | — | — | 🚧 未开始 |
+
+> 说明：Stage1-5 为已完成结果；当前 profiling 已明确 `enc_fusion` 是主要性能瓶颈，但本仓库尚未提交针对该模块的专门优化结果。
 
 ---
 
@@ -691,31 +727,38 @@ Max GPU 显存：12,154 MB
 
 ## 综合结论
 
-### 已验证结论
+### 已完成工作
 
-1. **Pipeline 完整可复现**：从环境配置到 COCO 评估全流程跑通
-2. **微调稳定有效**：固定种子后 AP 波动 ≤ 0.002
-3. **Queries 存在严重冗余**：900 → 200 精度基本不变
-4. **冻结 BERT 明显降精度**：-0.062 AP，且加速收益极小
-5. **简单剪枝收益有限**：Top-K Pruning 反而略有下降
-6. **推理瓶颈非 queries**：减少 queries 对速度几乎无影响
-7. **INT8 动态量化精度无损**：模型体积减少 56.2%，mAP 基本不变，CPU 推理加速 17.4%
+1. **Pipeline 完整可复现**：从环境配置、ODVG 数据准备到 COCO 评估与单图推理全流程跑通。
+2. **Baseline 与微调结果稳定**：固定种子后 `q=300` 的 AP 波动控制在 0.002 以内。
+3. **Queries 冗余性得到验证**：`900 -> 200` 对精度影响很小，但对端到端延迟改善有限。
+4. **冻结 BERT 不可取**：AP 显著下降，且速度收益极弱。
+5. **简单 Query Pruning 收益有限**：训练阶段 Top-K 裁剪不能有效绕开主要计算开销。
+6. **轻量化链路可行**：完成了层剪枝、`dec_n_points=2`、数值稳定化和 DistilBERT 替换。
+7. **部署压缩有效**：动态 INT8 量化显著降低模型体积，并在 CPU 上带来一定加速。
+8. **性能瓶颈已定位**：通过 caption profiling 与 encoder split profiling，确认主要瓶颈位于 encoder 内的 `enc_fusion`（`BiAttentionBlock`）。
 
-### 核心结论
+### 关键发现
 
 > **GroundingDINO 当前架构对 queries 数量不敏感。**
 >
-> 原因：多层 Attention 稀释冗余、Hungarian Matching 过滤、Decoder 多轮 Refinement。
+> `Object Queries` 确实存在冗余，但减少 queries 不是当前端到端加速的关键抓手。
 
-> **性能瓶颈位于 Transformer Encoder 内的 enc_fusion（跨模态融合模块）。**
+> **真正的性能瓶颈位于 Transformer Encoder 内部的 `enc_fusion`。**
 >
-> 长 caption 下，`BiAttentionBlock` 中的 softmax 与 context bmm 随文本 token 数呈二次方增长，是端到端延迟上升的根本原因。
+> 长 caption 下，`BiAttentionBlock` 中的 softmax 与 context bmm 随文本 token 数近似二次增长，这是端到端延迟上升的根本原因。
 
-> **INT8 动态量化是低成本高收益的部署优化手段。**
+> **动态 INT8 量化更适合作为部署压缩手段，而不是当前瓶颈的最终解决方案。**
 >
-> 无需重训练即可将模型体积从 445.6 MB 压缩至 195.1 MB（-56.2%），检测精度基本无损，适用于边缘设备和 CPU 推理等存储/内存受限场景。
+> 它在模型体积和 CPU 推理上有效，但没有从根本上解决 `enc_fusion` 主导的端到端性能问题。
 
-### 完整优化链路
+### 当前项目定位
+
+> 本仓库当前更准确的定位是：**GroundingDINO 的复现、轻量化探索与性能瓶颈定位**。
+>
+> 已完成 queries / 剪枝 / DistilBERT / 动态量化等实验，并明确定位出 `enc_fusion` 是主要瓶颈；但尚未对该模块提交专门的结构级优化结果，因此当前版本不应表述为“瓶颈已优化完毕”。
+
+### 已完成的工作链路
 
 ```
 原始 GroundingDINO (Swin-T + BERT, enc6 + dec6 + 900q)
@@ -724,25 +767,37 @@ Max GPU 显存：12,154 MB
   │  ① 结构剪枝 + 降采样 + 数值稳定化 + DistilBERT (Stage1-4)
   ▼
 
-Stage4 剪枝模型 (Swin-T + DistilBERT, enc4 + dec3 + 300q)
-  参数量: 116.7M   模型体积: 445.6 MB   AP: 0.514    显存: <10GB
+Stage4 轻量化模型 (Swin-T + DistilBERT, enc4 + dec3 + 300q)
+  参数量: 116.7M   模型体积: 445.6 MB   AP: 0.512    显存: <10GB
 
   │  ② PyTorch 动态 INT8 量化 (Stage5)
   ▼
 
-Stage5 量化模型
+Stage5 部署压缩模型
   参数量: 116.7M   模型体积: 195.1 MB   AP: ~0.514   体积 -56.2%
+
+  │  ③ Caption profiling + encoder split profiling
+  ▼
+
+当前结论：主要瓶颈位于 encoder.enc_fusion（BiAttentionBlock）
+  状态：已定位，尚未针对该模块做专门优化
 ```
 
+### 下一步
+
+- 针对 `enc_fusion` 设计 bottleneck-oriented optimization，而不是继续只围绕 queries 做裁剪。
+- 面向长 caption 场景尝试 token reduction、低秩注意力或分组融合等方案。
+- 在瓶颈定位完成后，再评估 selective Vision QAT、TensorRT 或算子级优化的收益。
+- 将后续优化结果与当前 Stage1-5 结果做统一对比，形成完整的“定位 -> 优化 -> 验证”闭环。
 
 ### 综合指标对比
 
 | 模型配置 | AP | epoch time | Max Mem (MB) | 模型体积 | 备注 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | Baseline（q=900, BERT） | 0.552 | 0:21:14 | 12,154 | ~694 MB | 标准基准 |
-| q=300（最优 queries） | 0.558 | 0:21:44 | 11,560 | 659.3MB | 精度最高 |
-| Stage1（层剪枝） | 0.533 | 0:15:59 | 10,742 | — | 提速 26%，精度 -2% |
-| Stage4（结构轻量化） | 0.512 | 0:15:03 | 9,764 | 445.6 MB | 提速 31%，显存 <10GB |
-| Stage5（+ INT8 量化） | 0.514 | — | — | 195.1 MB | 体积 -56.2%，精度无损 |
+| q=300（最优 queries） | 0.558 | 0:21:44 | 11,560 | 659.3 MB | queries 更少但速度几乎不变 |
+| Stage1（层剪枝） | 0.533 | 0:15:59 | 10,742 | — | 轻量化有效，但不是瓶颈导向优化 |
+| Stage4（结构轻量化） | 0.512 | 0:15:03 | 9,764 | 445.6 MB | 资源占用下降，未解决 `enc_fusion` 瓶颈 |
+| Stage5（+ INT8 量化） | 0.514 | — | — | 195.1 MB | 部署压缩有效，未解决端到端主瓶颈 |
 
 ---
